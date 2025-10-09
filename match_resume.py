@@ -1,5 +1,4 @@
 import re
-from collections import Counter
 
 def compute_match(resume_data, job_description):
     """
@@ -84,3 +83,46 @@ def compute_match(resume_data, job_description):
         result += f"- {point}\n"
     
     return result
+
+def compute_surface_fit(resume_data, jd_data):
+    """Compute surface fit score between resume and job description (0-100)"""
+    
+    # Get skills
+    resume_skills = resume_data.get('skills', [])
+    if isinstance(resume_skills, str):
+        resume_skills = [resume_skills]
+    
+    jd_skills = jd_data.get('required_skills', [])
+    
+    # Calculate skill match percentage
+    skill_matches = 0
+    if jd_skills:
+        resume_text = ' '.join(resume_skills).lower()
+        for jd_skill in jd_skills:
+            if jd_skill.lower() in resume_text:
+                skill_matches += 1
+        skill_score = skill_matches / len(jd_skills)
+    else:
+        skill_score = 0.5
+    
+    # Calculate education match percentage
+    resume_edu = resume_data.get('education', [])
+    jd_edu = jd_data.get('required_education', [])
+    
+    if jd_edu and resume_edu:
+        edu_matches = 0
+        resume_edu_text = ' '.join(str(edu).lower() for edu in resume_edu)
+        
+        for req_edu in jd_edu:
+            degree = req_edu.get('degree', '').lower()
+            field = req_edu.get('field', '').lower()
+            if degree in resume_edu_text or field in resume_edu_text:
+                edu_matches += 1
+        
+        edu_score = edu_matches / len(jd_edu) if jd_edu else 0.5
+    else:
+        edu_score = 0.5
+    
+    # Weighted final score (70% skills, 30% education)
+    final_score = (0.7 * skill_score + 0.3 * edu_score) * 100
+    return round(final_score, 2)

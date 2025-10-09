@@ -10,35 +10,36 @@ class Resume(Base):
     __tablename__ = 'resumes'
     id = Column(Integer, primary_key=True)
     name = Column(String)
-    skills = Column(Text)
-    experience = Column(Text)
-    education = Column(Text)
+    skills = Column(Text)      # Matches existing DB
+    experience = Column(Text)  # Matches existing DB  
+    education = Column(Text)   # Matches existing DB
 
 Base.metadata.create_all(engine)
 
 def store_resume(data):
+    """Store or update resume in database"""
     session = Session()
-    name = data.get('name', 'Unknown')
-    
-    # Check if resume with same name already exists
-    existing_resume = session.query(Resume).filter_by(name=name).first()
-    
-    if existing_resume:
-        # Update existing resume
-        existing_resume.skills = str(data['skills'])
-        existing_resume.experience = str(data['experience'])
-        existing_resume.education = str(data['education'])
-        print(f"Updated existing resume for {name}")
-    else:
-        # Create new resume
-        resume = Resume(
-            name=name,
-            skills=str(data['skills']),
-            experience=str(data['experience']),
-            education=str(data['education'])
-        )
-        session.add(resume)
-        print(f"Created new resume for {name}")
-    
-    session.commit()
-    session.close()
+    try:
+        # Check if resume already exists
+        existing = session.query(Resume).filter_by(name=data.get('name', 'Unknown')).first()
+        
+        if existing:
+            # Update existing resume
+            existing.skills = str(data.get('skills', []))
+            existing.experience = str(data.get('experience', []))
+            existing.education = str(data.get('education', []))
+            print(f"Updated existing resume for {existing.name}")
+        else:
+            # Create new resume
+            resume = Resume(
+                name=data.get('name', 'Unknown'),
+                skills=str(data.get('skills', [])),
+                experience=str(data.get('experience', [])),
+                education=str(data.get('education', []))
+            )
+            session.add(resume)
+            print(f"Added new resume for {resume.name}")
+        
+        session.commit()
+    finally:
+        session.close()
