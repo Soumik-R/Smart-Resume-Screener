@@ -83,13 +83,47 @@ Smart-Resume-Screener/
 
 ---
 
-## Next Steps
+## Step 2: Install Required Libraries ✅
 
-### Step 2: Install Core Dependencies
-Once we determine which libraries to use (Phase 1 planning), install them:
+**Date Completed:** October 14, 2025
+
+### Installed Backend Libraries:
+
+1. **✅ pdfplumber (v0.11.7)** - PDF text extraction and parsing
+2. **✅ spaCy (v3.8.7)** - NLP and entity extraction
+   - Downloaded model: `en_core_web_sm` (English language model)
+3. **✅ OpenAI SDK (v2.3.0)** - LLM API for intelligent resume analysis
+4. **✅ PyMongo (v4.15.3)** - MongoDB database driver
+5. **✅ FastAPI (v0.119.0)** - Modern web framework for building APIs
+6. **✅ Uvicorn (v0.37.0)** - ASGI server for running FastAPI
+7. **✅ Pandas (v2.3.3)** - Data manipulation and analysis
+8. **✅ python-multipart (v0.0.20)** - File upload handling for FastAPI
+
+### Installation Commands Used:
+
+```powershell
+pip install pdfplumber
+pip install spacy
+python -m spacy download en_core_web_sm
+pip install openai
+pip install pymongo
+pip install fastapi uvicorn[standard]
+pip install pandas python-multipart
+pip freeze > requirements.txt
 ```
-pip install pypdf2 pdfplumber openai streamlit pandas numpy matplotlib
+
+### Verification:
+
+Run the test script to verify all installations:
+```powershell
+python test_setup.py
 ```
+
+**Result:** ✅ All 8/8 libraries installed and working correctly!
+
+---
+
+## Next Steps
 
 ### Step 3: Create Project Structure
 - Create `src/` directory for source code
