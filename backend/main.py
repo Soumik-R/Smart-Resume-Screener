@@ -4,16 +4,19 @@ Provides REST API endpoints for resume parsing, matching, and database operation
 """
 import os
 import uuid
+import csv
 import logging
 from datetime import datetime
 from typing import Optional, List
-from io import BytesIO
+from io import BytesIO, StringIO
+from tempfile import NamedTemporaryFile
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
+import openai
 
 # Import local modules
 import db
@@ -107,6 +110,15 @@ class ShortlistResponse(BaseModel):
     page: int
     page_size: int
     filters_applied: dict
+    message: str
+
+class BiasCheckResponse(BaseModel):
+    candidate_id: str
+    bias_detected: bool
+    bias_flags: List[str]
+    analysis: str
+    recommendations: List[str]
+    timestamp: str
     message: str
 
 
@@ -671,6 +683,313 @@ async def get_shortlist(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to fetch shortlist: {str(e)}")
+
+
+@app.get("/export/{jd_id}/csv")
+async def export_shortlist_csv(
+    jd_id: str,
+    threshold: float = Query(7.0, description="Minimum overall score threshold", ge=0, le=10),
+    min_experience: Optional[int] = Query(None, description="Minimum years of experience", ge=0),
+    min_skills_score: Optional[float] = Query(None, description="Minimum skills score", ge=0, le=10)
+):
+    """
+    Export shortlisted candidates to CSV file
+    
+    - Uses same filters as /shortlist endpoint
+    - Generates CSV with comprehensive candidate data
+    - Returns as downloadable file
+    """
+    logger.info("="*80)
+    logger.info(f"📊 Exporting shortlist to CSV for JD: {jd_id}")
+    logger.info(f"📋 Filters: threshold={threshold}, min_exp={min_experience}, min_skills={min_skills_score}")
+    
+    try:
+        # Verify JD exists
+        jd_doc = db.get_job_by_id(jd_id)
+        if not jd_doc:
+            raise HTTPException(status_code=404, detail=f"Job description not found: {jd_id}")
+        
+        # Get all match results for this JD
+        logger.info("🔍 Querying match results...")
+        all_matches = db.get_match_history(jd_id=jd_id)
+        
+        logger.info(f"✓ Found {len(all_matches)} total matches")
+        
+        # Apply filters (same logic as shortlist endpoint)
+        filtered_candidates = []
+        
+        for match in all_matches:
+            candidate_id = match.get("candidate_id")
+            match_data = match.get("match_data", {})
+            scores = match_data.get("scores", {})
+            overall_score = scores.get("overall", 0)
+            
+            # Apply threshold filter
+            if overall_score < threshold:
+                continue
+            
+            # Fetch candidate details for additional filters
+            candidate = db.get_resume_by_id(candidate_id)
+            if not candidate:
+                continue
+            
+            # Apply experience filter
+            if min_experience is not None:
+                exp_years = candidate.get("experience", {}).get("years", 0)
+                if exp_years < min_experience:
+                    continue
+            
+            # Apply skills score filter
+            if min_skills_score is not None:
+                skills_score = scores.get("skills", 0)
+                if skills_score < min_skills_score:
+                    continue
+            
+            # Add to filtered list
+            filtered_candidates.append({
+                "candidate_id": candidate_id,
+                "name": candidate.get("name", "Unknown"),
+                "email": candidate.get("email", "N/A"),
+                "phone": candidate.get("phone", "N/A"),
+                "overall_score": overall_score,
+                "skills_score": scores.get("skills", 0),
+                "experience_score": scores.get("experience", 0),
+                "education_projects_score": scores.get("education_projects", 0),
+                "achievements_score": scores.get("achievements", 0),
+                "extracurricular_score": scores.get("extracurricular", 0),
+                "experience_years": candidate.get("experience", {}).get("years", 0),
+                "skills": ", ".join(candidate.get("skills", [])[:10]),
+                "feedback": match_data.get("feedback", ""),
+                "strengths": " | ".join(match_data.get("strengths", [])[:5]),
+                "improvement_areas": " | ".join(match_data.get("improvement_areas", [])[:5]),
+                "matched_at": match_data.get("timestamp", "")
+            })
+        
+        logger.info(f"✓ After filtering: {len(filtered_candidates)} candidates")
+        
+        if not filtered_candidates:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"No candidates found matching criteria (threshold={threshold})"
+            )
+        
+        # Sort by overall score (descending)
+        filtered_candidates.sort(key=lambda x: x["overall_score"], reverse=True)
+        
+        # Generate CSV
+        logger.info("📝 Generating CSV file...")
+        output = StringIO()
+        
+        # Define CSV headers
+        csv_headers = [
+            "Rank",
+            "Candidate ID",
+            "Name",
+            "Email",
+            "Phone",
+            "Overall Score",
+            "Skills Score",
+            "Experience Score",
+            "Education & Projects Score",
+            "Achievements Score",
+            "Extracurricular Score",
+            "Years of Experience",
+            "Top Skills",
+            "Strengths",
+            "Improvement Areas",
+            "Feedback Summary",
+            "Matched At"
+        ]
+        
+        writer = csv.DictWriter(output, fieldnames=csv_headers)
+        writer.writeheader()
+        
+        # Write candidate data
+        for rank, candidate in enumerate(filtered_candidates, 1):
+            writer.writerow({
+                "Rank": rank,
+                "Candidate ID": candidate["candidate_id"],
+                "Name": candidate["name"],
+                "Email": candidate["email"],
+                "Phone": candidate["phone"],
+                "Overall Score": f"{candidate['overall_score']:.2f}",
+                "Skills Score": f"{candidate['skills_score']:.2f}",
+                "Experience Score": f"{candidate['experience_score']:.2f}",
+                "Education & Projects Score": f"{candidate['education_projects_score']:.2f}",
+                "Achievements Score": f"{candidate['achievements_score']:.2f}",
+                "Extracurricular Score": f"{candidate['extracurricular_score']:.2f}",
+                "Years of Experience": candidate["experience_years"],
+                "Top Skills": candidate["skills"],
+                "Strengths": candidate["strengths"],
+                "Improvement Areas": candidate["improvement_areas"],
+                "Feedback Summary": candidate["feedback"][:200] + "..." if len(candidate["feedback"]) > 200 else candidate["feedback"],
+                "Matched At": candidate["matched_at"]
+            })
+        
+        logger.info(f"✓ CSV generated with {len(filtered_candidates)} rows")
+        
+        # Prepare response
+        output.seek(0)
+        csv_content = output.getvalue()
+        
+        # Create filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"shortlist_{jd_id[:8]}_{timestamp}.csv"
+        
+        logger.info("="*80)
+        logger.info(f"✅ CSV export complete: {filename}")
+        logger.info("="*80)
+        
+        # Return as downloadable file
+        return StreamingResponse(
+            iter([csv_content]),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    
+    except Exception as e:
+        logger.error(f"❌ Error exporting CSV: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to export CSV: {str(e)}")
+
+
+@app.post("/bias_check/{candidate_id}", response_model=BiasCheckResponse)
+async def check_bias(candidate_id: str):
+    """
+    Run bias detection on candidate resume (anonymized data)
+    
+    - Fetches candidate resume from database
+    - Anonymizes personal information
+    - Uses LLM to detect potential demographic inferences or biases
+    - Stores bias check results in candidate document
+    - Returns analysis and recommendations
+    """
+    logger.info("="*80)
+    logger.info(f"🔍 Running bias check for candidate: {candidate_id}")
+    
+    try:
+        # Fetch candidate
+        logger.info("📄 Fetching candidate resume...")
+        candidate = db.get_resume_by_id(candidate_id)
+        if not candidate:
+            raise HTTPException(status_code=404, detail=f"Candidate not found: {candidate_id}")
+        
+        logger.info(f"✓ Loaded candidate: {candidate.get('name', 'Unknown')}")
+        
+        # Anonymize data
+        logger.info("🔒 Anonymizing candidate data...")
+        anonymized_data = anonymize_resume_data(candidate)
+        
+        # Prepare bias check prompt
+        bias_check_prompt = f"""You are an AI bias detection expert. Analyze the following anonymized resume data for potential biases or unintended demographic inferences.
+
+ANONYMIZED RESUME DATA:
+{anonymized_data}
+
+TASK:
+1. Identify any language, phrases, or patterns that could inadvertently reveal or infer:
+   - Gender, age, race, ethnicity, nationality
+   - Socioeconomic status
+   - Disability status
+   - Religious affiliation
+   - Any other protected characteristics
+
+2. Detect potential biases in how the resume is written:
+   - Unconscious biases in skill descriptions
+   - Gendered language or stereotypes
+   - Cultural assumptions
+   - Educational elitism
+
+3. Flag any concerns even if subtle
+
+RESPOND IN JSON FORMAT:
+{{
+    "bias_detected": true/false,
+    "bias_flags": ["flag1", "flag2", ...],
+    "analysis": "Detailed analysis of potential biases found",
+    "recommendations": ["recommendation1", "recommendation2", ...]
+}}
+
+BE THOROUGH: Look for both obvious and subtle indicators. If no biases detected, explain why the resume appears neutral."""
+        
+        logger.info("🤖 Calling GPT-4o for bias analysis...")
+        
+        # Initialize OpenAI client
+        openai_client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        
+        response = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are an expert in detecting bias and ensuring fair, unbiased hiring practices."},
+                {"role": "user", "content": bias_check_prompt}
+            ],
+            temperature=0.3,
+            max_tokens=1500,
+            response_format={"type": "json_object"}
+        )
+        
+        # Parse response
+        import json
+        bias_result = json.loads(response.choices[0].message.content)
+        
+        logger.info(f"✓ Bias check complete: {bias_result.get('bias_detected', False)}")
+        logger.info(f"   Flags found: {len(bias_result.get('bias_flags', []))}")
+        
+        # Store bias check in candidate document
+        timestamp = datetime.now().isoformat()
+        bias_check_record = {
+            "timestamp": timestamp,
+            "bias_detected": bias_result.get("bias_detected", False),
+            "bias_flags": bias_result.get("bias_flags", []),
+            "analysis": bias_result.get("analysis", ""),
+            "recommendations": bias_result.get("recommendations", [])
+        }
+        
+        # Update candidate document
+        logger.info("💾 Saving bias check results...")
+        from pymongo import UpdateOne
+        db_client = db.get_client()
+        database = db.get_database()
+        candidates_collection = database["candidates"]
+        
+        candidates_collection.update_one(
+            {"_id": candidate_id},
+            {
+                "$push": {"bias_checks": bias_check_record},
+                "$set": {"last_bias_check": timestamp}
+            }
+        )
+        
+        logger.info("✓ Bias check results saved to database")
+        
+        logger.info("="*80)
+        logger.info(f"✅ Bias check complete for candidate: {candidate_id}")
+        logger.info("="*80)
+        
+        return BiasCheckResponse(
+            candidate_id=candidate_id,
+            bias_detected=bias_result.get("bias_detected", False),
+            bias_flags=bias_result.get("bias_flags", []),
+            analysis=bias_result.get("analysis", ""),
+            recommendations=bias_result.get("recommendations", []),
+            timestamp=timestamp,
+            message=f"Bias check completed. {'Potential biases detected.' if bias_result.get('bias_detected') else 'No significant biases detected.'}"
+        )
+        
+    except HTTPException:
+        raise
+    
+    except Exception as e:
+        logger.error(f"❌ Error during bias check: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to perform bias check: {str(e)}")
 
 
 # ============================================================================
