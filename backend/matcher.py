@@ -306,8 +306,11 @@ You must score the candidate on a **1-10 scale** for FIVE categories:
   - Proficiency level: Evidence of depth vs surface knowledge (30% weight)
   - Bonus skills: Nice-to-have or adjacent skills (20% weight)
   - Skill recency: Recently used vs outdated (10% weight)
-- 10 = Perfect match with all required + bonus skills
-- 1 = Minimal skill overlap
+- **BE CRITICAL**: Only give 9-10 if candidate has ALL required skills + extras
+- 10 = Perfect match with all required + bonus skills + demonstrated mastery
+- 7-8 = Strong match with most required skills
+- 5-6 = Adequate match with some gaps
+- 1-4 = Minimal skill overlap or significant gaps
 
 ## Category 2: EXPERIENCE (Work History)
 - Calculate total relevant years using the rules above
@@ -316,9 +319,12 @@ You must score the candidate on a **1-10 scale** for FIVE categories:
   - Relevance of past roles to target role (35% weight)
   - Career progression and growth (15% weight)
   - Industry alignment (10% weight)
-- 10 = Exceeds experience requirement with highly relevant background
-- 5 = Meets minimum threshold or fresher with strong projects
-- 1 = Significantly under-qualified or irrelevant experience
+- **BE CRITICAL**: Don't give high scores for barely meeting minimums
+- 10 = Significantly exceeds requirement (2x+) with highly relevant background
+- 7-8 = Exceeds requirement with relevant roles
+- 5-6 = Meets minimum or fresher with strong projects/internships
+- 3-4 = Below minimum but shows potential
+- 1-2 = Significantly under-qualified or irrelevant experience
 
 ## Category 3: EDUCATION & PROJECTS
 - Education: Degree level, field of study, institution reputation, GPA if available
@@ -327,8 +333,11 @@ You must score the candidate on a **1-10 scale** for FIVE categories:
   - Educational foundation for the role (40% weight)
   - Quality and relevance of projects (40% weight)
   - Continuous learning evidence (certifications, courses) (20% weight)
-- 10 = Top-tier education + impressive projects
-- 1 = Education/projects unrelated to role
+- **BE CRITICAL**: Generic projects without impact don't deserve high scores
+- 10 = Top-tier education + highly impressive, impactful projects
+- 7-8 = Relevant degree + solid projects with measurable outcomes
+- 5-6 = Adequate education + basic projects
+- 1-4 = Education/projects unrelated or minimal quality
 
 ## Category 4: ACHIEVEMENTS
 - Awards, competitions, publications, certifications
@@ -338,9 +347,12 @@ You must score the candidate on a **1-10 scale** for FIVE categories:
   - Relevance to target role (50% weight)
   - Prestige/impact level (30% weight)
   - Quantity and consistency (20% weight)
-- 10 = Multiple prestigious achievements directly relevant
-- 5 = Some achievements showing excellence
-- 1 = No notable achievements listed
+- **BE CRITICAL**: Common certifications alone don't warrant 8+
+- 10 = Multiple prestigious, directly relevant achievements (e.g., patents, major awards)
+- 7-8 = Several strong achievements with clear impact
+- 5-6 = Some achievements showing competence
+- 3-4 = Minimal achievements
+- 1-2 = No notable achievements listed
 
 ## Category 5: EXTRACURRICULAR & LEADERSHIP
 - Clubs, volunteering, organizing events, mentorship
@@ -351,9 +363,12 @@ You must score the candidate on a **1-10 scale** for FIVE categories:
   - Teamwork and collaboration skills (30% weight)
   - Initiative and passion (20% weight)
   - Cultural fit indicators (10% weight)
-- 10 = Strong leadership with significant impact
-- 5 = Moderate involvement showing soft skills
-- 1 = No extracurricular activities listed
+- **BE CRITICAL**: Membership alone doesn't equal leadership
+- 10 = Substantial leadership with documented impact (e.g., founded organization, led 50+ people)
+- 7-8 = Clear leadership roles with team management
+- 5-6 = Active involvement showing soft skills
+- 3-4 = Basic participation
+- 1-2 = No extracurricular activities listed
 
 # WEIGHTS FOR OVERALL SCORE
 The overall score (1-10) is calculated as a weighted average:
@@ -401,14 +416,21 @@ You MUST respond with a valid JSON object in this EXACT format:
 }}
 
 # IMPORTANT NOTES
-1. Be HONEST but CONSTRUCTIVE - highlight both strengths and gaps
-2. Provide ACTIONABLE feedback that helps candidates improve
-3. Consider CONTEXT - a 7.0 fresher might be better than a 6.5 experienced candidate for a junior role
-4. Ensure JSON is VALID - use double quotes, proper escaping
-5. Be CONSISTENT - use the same evaluation criteria for all candidates
-6. Calculate overall score using the weighted formula: overall = Σ(sub_score × weight)
+1. **BE CRITICAL AND FAIR**: Reserve 9-10 scores for truly exceptional matches. Most candidates will score 4-7.
+2. **SCORING CONSISTENCY**: Use the full 1-10 range. Don't cluster all scores around 7-8.
+   - 10 = Exceptional, rare (top 1%)
+   - 9 = Excellent, exceeds expectations significantly
+   - 7-8 = Good, meets requirements with strengths
+   - 5-6 = Adequate, meets minimums with gaps
+   - 3-4 = Below par, significant development needed
+   - 1-2 = Poor fit, major gaps
+3. **BE HONEST but CONSTRUCTIVE**: Highlight both strengths and gaps with specifics
+4. **ACTIONABLE FEEDBACK**: Provide concrete suggestions (e.g., "Obtain AWS certification" not "Improve cloud skills")
+5. **CONTEXT MATTERS**: A 7.0 fresher with strong projects might be better than a 6.5 mid-level candidate for a junior role
+6. **VALID JSON**: Use double quotes, proper escaping, no trailing commas
+7. **WEIGHTED CALCULATION**: Verify overall = (skills × {weights['skills']}) + (experience × {weights['experience']}) + (education_projects × {weights['education_projects']}) + (achievements × {weights['achievements']}) + (extracurricular × {weights['extracurricular']})
 
-Now, provide your comprehensive analysis:"""
+Now, provide your comprehensive, critical, and insightful analysis:"""
 
     return prompt
 
@@ -579,20 +601,29 @@ def match_resume_to_jd(
     else:
         validate_weights(weights)
     
-    logger.info(f"Starting resume-JD matching with role_context='{role_context}'")
+    logger.info("="*80)
+    logger.info(f"🎯 Starting resume-JD matching with role_context='{role_context}'")
+    logger.info(f"📊 Using weights: {weights}")
     
     # Parse resume JSON to anonymize it
     try:
         resume_data = json.loads(resume_json)
+        logger.debug(f"Resume data keys: {list(resume_data.keys())}")
+        
         anonymized_resume = anonymize_resume(resume_data)
         anonymized_json = json.dumps(anonymized_resume, indent=2)
-        logger.info("Resume anonymized successfully")
+        
+        logger.info("✓ Resume anonymized successfully")
+        logger.debug(f"Anonymized resume length: {len(anonymized_json)} characters")
     except json.JSONDecodeError as e:
-        logger.error(f"Invalid resume JSON: {e}")
+        logger.error(f"❌ Invalid resume JSON: {e}")
         raise ValueError(f"Invalid resume JSON format: {e}")
     
     # Build the comprehensive prompt
+    logger.info("📝 Building LLM scoring prompt...")
     prompt = build_scoring_prompt(anonymized_json, jd_text, weights, role_context)
+    logger.info(f"✓ Prompt built: {len(prompt)} characters")
+    logger.debug(f"Prompt preview (first 500 chars):\n{prompt[:500]}...")
     
     # Call LLM with retries
     for attempt in range(max_retries + 1):
@@ -617,14 +648,19 @@ def match_resume_to_jd(
             )
             
             response_text = response.choices[0].message.content
-            logger.info(f"Received LLM response ({len(response_text)} chars)")
+            logger.info(f"✓ Received LLM response ({len(response_text)} chars)")
+            logger.debug(f"Raw LLM response (first 500 chars):\n{response_text[:500]}...")
+            logger.debug(f"Token usage - Prompt: {response.usage.prompt_tokens}, Completion: {response.usage.completion_tokens}, Total: {response.usage.total_tokens}")
             
             # Parse JSON response
+            logger.info("📋 Parsing JSON response...")
             output = parse_llm_json_response(response_text)
             
             if output is None:
-                logger.warning(f"Failed to parse JSON (attempt {attempt + 1})")
+                logger.warning(f"⚠️ Failed to parse JSON (attempt {attempt + 1})")
+                logger.debug(f"Unparseable response text:\n{response_text[:1000]}...")
                 if attempt < max_retries:
+                    logger.info("🔄 Retrying with fix-up prompt...")
                     # Retry with fix-up prompt
                     prompt = f"""The previous response was not valid JSON. Please provide the resume analysis in STRICT JSON format with these fields:
 {{
@@ -645,29 +681,49 @@ Original analysis request:
                 else:
                     raise RuntimeError("Failed to parse LLM response as JSON after all retries")
             
+            logger.info("✓ JSON parsed successfully")
+            
             # Validate output structure
+            logger.info("🔍 Validating LLM output structure...")
             if not validate_llm_output(output):
-                logger.warning(f"LLM output validation failed (attempt {attempt + 1})")
+                logger.warning(f"⚠️ LLM output validation failed (attempt {attempt + 1})")
+                logger.debug(f"Invalid output keys: {list(output.keys())}")
                 if attempt < max_retries:
                     continue
                 else:
                     raise RuntimeError("LLM output validation failed after all retries")
             
+            logger.info("✓ Validation passed")
+            
             # Compute final weighted score (verify LLM calculation)
+            logger.info("🧮 Computing weighted overall score...")
             sub_scores = output['sub_scores']
+            logger.debug(f"Sub-scores: {sub_scores}")
+            
             calculated_overall = aggregate_scores(sub_scores, weights)
+            logger.debug(f"Calculated overall: {calculated_overall:.2f}")
             
             # Use calculated score (more reliable than LLM's calculation)
+            llm_overall = output.get('overall', 0)
+            if abs(llm_overall - calculated_overall) > 0.5:
+                logger.warning(f"⚠️ LLM overall ({llm_overall:.2f}) differs from calculated ({calculated_overall:.2f}) - using calculated")
+            
             output['overall'] = calculated_overall
             
             # Add shortlist flag (True if score > 7.0)
             output['shortlisted'] = calculated_overall > 7.0
+            logger.info(f"Shortlist status: {'✓ SHORTLISTED' if output['shortlisted'] else '✗ Not shortlisted'} (threshold: 7.0)")
             
             # Add metadata
             output['weights_used'] = weights
             output['role_context'] = role_context
             
-            logger.info(f"Matching complete - Overall score: {calculated_overall:.1f}, Shortlisted: {output['shortlisted']}")
+            # Log final results
+            logger.info("="*80)
+            logger.info(f"✅ MATCHING COMPLETE - Overall score: {calculated_overall:.1f}/10")
+            logger.info(f"📊 Sub-scores: Skills={sub_scores['skills']:.1f}, Experience={sub_scores['experience']:.1f}, Edu/Projects={sub_scores['education_projects']:.1f}, Achievements={sub_scores['achievements']:.1f}, Extracurricular={sub_scores['extracurricular']:.1f}")
+            logger.info(f"💡 Recommendation: {output.get('hiring_recommendation', 'N/A')}")
+            logger.info("="*80)
             
             return output
             
@@ -824,16 +880,25 @@ def score_batch(
     """
     import json
     
-    logger.info(f"Starting batch scoring for {len(resumes_list)} candidates")
+    logger.info("="*80)
+    logger.info(f"🚀 Starting batch scoring for {len(resumes_list)} candidates")
+    logger.info(f"⚙️ Settings: role_context='{role_context}', include_metadata={include_metadata}")
+    logger.info(f"📊 Weights: {weights if weights else 'DEFAULT'}")
     
     # Extract JD requirements for better context
+    logger.info("📋 Extracting JD requirements...")
     jd_requirements = extract_jd_requirements(jd_text)
-    logger.info(f"JD Requirements extracted: {jd_requirements['required_skills'][:5]}...")
+    logger.info(f"✓ JD Requirements extracted:")
+    logger.info(f"  - Skills: {jd_requirements['required_skills'][:5]}..." if jd_requirements['required_skills'] else "  - Skills: None extracted")
+    logger.info(f"  - Experience: {jd_requirements['experience_years']} years" if jd_requirements['experience_years'] else "  - Experience: Not specified")
+    logger.info(f"  - Education: {jd_requirements['education']}" if jd_requirements['education'] else "  - Education: Not specified")
     
     # Enhance JD text with extracted requirements
     enhanced_jd = jd_text
     if jd_requirements['required_skills']:
-        enhanced_jd += f"\n\nKey Required Skills: {', '.join(jd_requirements['required_skills'][:10])}"
+        skills_list = ', '.join(jd_requirements['required_skills'][:10])
+        enhanced_jd += f"\n\nKey Required Skills: {skills_list}"
+        logger.info(f"✓ JD enhanced with {len(jd_requirements['required_skills'])} extracted skills")
     
     results = []
     
@@ -841,12 +906,15 @@ def score_batch(
         try:
             # Get candidate identifier
             candidate_id = resume_data.get('name', f'Candidate_{idx+1}')
-            logger.info(f"Scoring candidate {idx+1}/{len(resumes_list)}: {candidate_id}")
+            logger.info("-"*80)
+            logger.info(f"👤 Scoring candidate {idx+1}/{len(resumes_list)}: {candidate_id}")
             
             # Convert to JSON string
             resume_json = json.dumps(resume_data, default=str)
+            logger.debug(f"Resume JSON size: {len(resume_json)} characters")
             
             # Call matching function
+            logger.info(f"🔄 Calling match_resume_to_jd for {candidate_id}...")
             match_result = match_resume_to_jd(
                 resume_json=resume_json,
                 jd_text=enhanced_jd,
@@ -879,27 +947,47 @@ def score_batch(
                 }
             
             results.append(result)
-            logger.info(f"Scored {candidate_id}: {match_result['overall']:.1f}/10 - {match_result['hiring_recommendation']}")
+            logger.info(f"✅ Scored {candidate_id}: {match_result['overall']:.1f}/10 - {match_result['hiring_recommendation']}")
             
         except Exception as e:
-            logger.error(f"Error scoring candidate {idx+1}: {e}")
+            logger.error(f"❌ Error scoring candidate {idx+1}: {e}")
+            logger.debug(f"Error details:", exc_info=True)
             # Add failed result with error info
-            results.append({
+            failed_result = {
                 'candidate_id': resume_data.get('name', f'Candidate_{idx+1}'),
                 'overall_score': 0.0,
                 'error': str(e),
                 'shortlisted': False
-            })
+            }
+            results.append(failed_result)
+            logger.warning(f"⚠️ Added error entry for {failed_result['candidate_id']}")
             continue
     
     # Sort by overall score (descending)
+    logger.info("="*80)
+    logger.info("📊 Sorting and ranking candidates...")
     results.sort(key=lambda x: x.get('overall_score', 0), reverse=True)
     
     # Add ranking
     for rank, result in enumerate(results, 1):
         result['rank'] = rank
     
-    logger.info(f"Batch scoring complete. Top candidate: {results[0]['candidate_id']} ({results[0]['overall_score']:.1f}/10)")
+    # Log final rankings
+    logger.info("="*80)
+    logger.info("🏆 BATCH SCORING COMPLETE - Final Rankings:")
+    for i, result in enumerate(results[:5], 1):  # Top 5
+        status = "✓" if result.get('shortlisted', False) else "✗"
+        score = result.get('overall_score', 0)
+        candidate = result.get('candidate_id', 'Unknown')
+        logger.info(f"  {status} #{i}. {candidate}: {score:.1f}/10")
+    
+    if len(results) > 5:
+        logger.info(f"  ... and {len(results) - 5} more candidates")
+    
+    logger.info(f"✅ Top candidate: {results[0]['candidate_id']} ({results[0]['overall_score']:.1f}/10)")
+    shortlisted_count = sum(1 for r in results if r.get('shortlisted', False))
+    logger.info(f"📋 Total shortlisted: {shortlisted_count}/{len(results)} candidates")
+    logger.info("="*80)
     
     return results
 
