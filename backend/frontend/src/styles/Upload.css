@@ -1,0 +1,196 @@
+/* Upload Page Styles */
+
+.upload-container {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px 20px;
+}
+
+.upload-card {
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.form-section {
+  margin-bottom: 24px;
+}
+
+/* Dropzone Styles */
+.dropzone {
+  border: 2px dashed #000080;
+  border-radius: 8px;
+  padding: 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background-color: #f0f8ff;
+}
+
+.dropzone:hover {
+  border-color: #0000cd;
+  background-color: #e6f3ff;
+}
+
+.dropzone.active {
+  border-color: #0000cd;
+  background-color: #cce6ff;
+  transform: scale(1.02);
+}
+
+.dropzone.disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  border-color: #cccccc;
+  background-color: #f5f5f5;
+}
+
+.dropzone-icon {
+  font-size: 48px;
+  color: #000080;
+  margin-bottom: 16px;
+}
+
+.dropzone-text {
+  display: block;
+  font-size: 16px;
+  color: #000080;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.dropzone-hint {
+  display: block;
+  font-size: 13px;
+}
+
+/* File List Styles */
+.file-list {
+  margin-top: 24px;
+  padding: 16px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+}
+
+/* Submit Section Styles */
+.submit-section {
+  text-align: center;
+  margin-top: 32px;
+}
+
+.progress-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+}
+
+/* Success View Styles */
+.success-card {
+  text-align: center;
+}
+
+.success-content {
+  padding: 40px 20px;
+}
+
+.success-icon {
+  font-size: 80px;
+  color: #52c41a;
+  margin-bottom: 24px;
+  animation: scaleIn 0.5s ease-out;
+}
+
+@keyframes scaleIn {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.success-text {
+  font-size: 16px;
+  color: #333;
+  margin-bottom: 32px;
+}
+
+.success-stats {
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  margin-bottom: 40px;
+  flex-wrap: wrap;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 24px;
+  background-color: #f0f8ff;
+  border-radius: 8px;
+  border: 1px solid #000080;
+}
+
+.stat-item .ant-typography {
+  margin: 0;
+}
+
+.success-actions {
+  margin-top: 32px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .upload-container {
+    padding: 20px 10px;
+  }
+
+  .upload-card {
+    padding: 20px;
+  }
+
+  .dropzone {
+    padding: 30px 20px;
+  }
+
+  .dropzone-icon {
+    font-size: 36px;
+  }
+
+  .success-stats {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .stat-item {
+    width: 100%;
+  }
+}
+
+/* Animation for list items */
+.ant-list-item {
+  animation: fadeInUp 0.3s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
