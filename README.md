@@ -370,100 +370,6 @@ Refer to `docs/MONGODB_ATLAS_SETUP.md` for detailed MongoDB Atlas configuration 
 
 ## API Documentation
 
-### Base URL
-```
-http://localhost:8000
-```
-
-### Authentication
-Include API key in header:
-```
-X-API-Key: your_api_key_here
-```
-
-### Endpoints
-
-#### Health Check
-```http
-GET /
-```
-Returns API status and version information.
-
-#### Upload and Parse Resume
-```http
-POST /upload-resume
-Content-Type: multipart/form-data
-
-Parameters:
-- file: PDF file (max 5MB)
-```
-
-**Response:**
-```json
-{
-  "id": "resume_id",
-  "name": "John Doe",
-  "email": "john.doe@example.com",
-  "skills": ["Python", "FastAPI", "MongoDB"],
-  "experience": [...],
-  "education": [...]
-}
-```
-
-#### Upload Job Description
-```http
-POST /upload-job-description
-Content-Type: application/json
-
-{
-  "title": "Senior Software Engineer",
-  "description": "Job description text...",
-  "company": "Tech Corp"
-}
-```
-
-#### Match Resume to Job
-```http
-POST /match
-Content-Type: application/json
-
-{
-  "resume_id": "resume_id",
-  "job_description_id": "jd_id"
-}
-```
-
-**Response:**
-```json
-{
-  "overall_score": 85.5,
-  "skills_score": 90.0,
-  "experience_score": 85.0,
-  "education_score": 80.0,
-  "breakdown": {...}
-}
-```
-
-#### Batch Match
-```http
-POST /batch-match
-Content-Type: multipart/form-data
-
-Parameters:
-- files: Multiple PDF files
-- job_description_id: string
-```
-
-#### Get All Resumes
-```http
-GET /resumes
-```
-
-#### Get Match Results
-```http
-GET /matches?job_description_id={jd_id}&min_score={score}
-```
-
 Full API documentation available at: http://localhost:8000/docs
 
 ## Matching Algorithm
@@ -613,17 +519,6 @@ npm test
 3. Run matching and verify scores
 4. Test batch processing with multiple resumes
 
-## Documentation
-
-Comprehensive documentation available in the `docs/` directory:
-
-- **INSTALLATION_SUMMARY.md**: Detailed installation guide
-- **MONGODB_ATLAS_SETUP.md**: MongoDB configuration
-- **SECURITY.md**: Security best practices
-- **Phase3_Completion_Summary.md**: Development milestones
-- **Phase4_Step1_OpenAI_Setup.md**: OpenAI integration guide
-- **Phase4_Step2_Prompt_Engineering.md**: Prompt optimization
-
 ## Contributing
 
 Contributions are welcome! Please follow these guidelines:
@@ -633,14 +528,6 @@ Contributions are welcome! Please follow these guidelines:
 3. Make your changes with clear commit messages
 4. Add tests for new functionality
 5. Submit a pull request
-
-## License
-
-This project is available for educational and personal use.
-
-## Contact
-
-For questions or support, please open an issue on GitHub.
 
 ## Acknowledgments
 
