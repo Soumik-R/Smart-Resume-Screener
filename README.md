@@ -511,17 +511,6 @@ npm test
 3. Run matching and verify scores
 4. Test batch processing with multiple resumes
 
-## Documentation
-
-Comprehensive documentation available in the `docs/` directory:
-
-- **INSTALLATION_SUMMARY.md**: Detailed installation guide
-- **MONGODB_ATLAS_SETUP.md**: MongoDB configuration
-- **SECURITY.md**: Security best practices
-- **Phase3_Completion_Summary.md**: Development milestones
-- **Phase4_Step1_OpenAI_Setup.md**: OpenAI integration guide
-- **Phase4_Step2_Prompt_Engineering.md**: Prompt optimization
-
 ## Contributing
 
 Contributions are welcome! Please follow these guidelines:
