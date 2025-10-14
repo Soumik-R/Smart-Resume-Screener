@@ -172,6 +172,248 @@ def get_weights(custom_weights: Optional[Dict[str, float]] = None) -> Dict[str, 
 
 
 # ============================================================================
+# PROMPT ENGINEERING
+# ============================================================================
+
+def build_scoring_prompt(
+    resume_json: str,
+    jd_text: str,
+    weights: Optional[Dict[str, float]] = None,
+    role_context: str = "general"
+) -> str:
+    """
+    Build a comprehensive LLM prompt for resume-JD matching
+    
+    This prompt is designed to extract nuanced, recruiter-level analysis with:
+    - Multi-category scoring (skills, experience, education, achievements, extracurricular)
+    - Semantic skill matching (e.g., "data analysis" matches "SQL")
+    - Context-aware evaluation (junior vs senior roles)
+    - Bias avoidance (demographics ignored)
+    - Structured JSON output
+    
+    Args:
+        resume_json: Anonymized resume data in JSON format
+        jd_text: Job description text
+        weights: Scoring weights (defaults to DEFAULT_WEIGHTS)
+        role_context: Context hint - "junior", "senior", "mid-level", or "general"
+        
+    Returns:
+        Formatted prompt string for GPT-4o
+    """
+    if weights is None:
+        weights = DEFAULT_WEIGHTS
+    else:
+        validate_weights(weights)
+    
+    # Format weights for display
+    weights_display = "\n".join([
+        f"  - {category.replace('_', ' ').title()}: {weight*100:.0f}%"
+        for category, weight in weights.items()
+    ])
+    
+    # Context-specific instructions
+    context_instructions = {
+        "junior": """
+CONTEXT: This is a JUNIOR-LEVEL role (0-2 years experience).
+- Emphasize educational background and academic projects over work experience
+- Internships are highly valuable - count each 3-6 month internship as 0.5 years equivalent
+- Look for learning agility, foundational skills, and growth potential
+- Projects and coursework demonstrate practical application of knowledge
+- Extracurricular activities show soft skills, leadership potential, and cultural fit
+""",
+        "senior": """
+CONTEXT: This is a SENIOR-LEVEL role (5+ years experience).
+- Prioritize depth of experience, leadership, and strategic impact
+- Look for progressive career growth and increasing responsibility
+- Achievements should demonstrate measurable business impact
+- Technical depth matters more than breadth for specialized roles
+- Management/mentorship experience is highly valuable
+""",
+        "mid-level": """
+CONTEXT: This is a MID-LEVEL role (2-5 years experience).
+- Balance between foundational skills and proven track record
+- Look for consistency in career progression
+- Projects should show increasing complexity and ownership
+- Both technical skills and soft skills are important
+- Some leadership or mentorship experience is a plus
+""",
+        "general": """
+CONTEXT: General role assessment.
+- Evaluate the candidate holistically across all categories
+- Consider both technical competencies and soft skills
+- Look for alignment between career trajectory and role requirements
+"""
+    }
+    
+    prompt = f"""You are an EXPERT HR RECRUITER with 10+ years of experience in tech hiring and talent assessment. You have successfully placed hundreds of candidates and have a deep understanding of what makes a great fit for technical roles.
+
+# YOUR MISSION
+Analyze the provided anonymized resume data against the job description below. Your goal is to provide a comprehensive, fair, and insightful evaluation that helps hiring managers make informed decisions.
+
+# CRITICAL INSTRUCTIONS - READ CAREFULLY
+
+## 1. BIAS AVOIDANCE (MANDATORY)
+- The resume data is ANONYMIZED - personal identifiers have been removed
+- Do NOT make assumptions about demographics (age, gender, ethnicity, nationality, etc.)
+- Focus ONLY on skills, experience, education, and demonstrated capabilities
+- Ignore any potential indicators of protected characteristics
+- Evaluate purely on job-relevant qualifications and merit
+
+## 2. SEMANTIC UNDERSTANDING
+Use your advanced language understanding to recognize:
+- Equivalent skills: "data analysis" ≈ "SQL", "analytics", "statistical analysis"
+- Related technologies: "React" ≈ "React.js", "ReactJS", "frontend development"
+- Similar roles: "Software Engineer" ≈ "Developer", "Programmer", "SDE"
+- Domain knowledge: "machine learning" includes "neural networks", "deep learning", "AI"
+- Transferable skills: Project management, problem-solving, communication
+
+## 3. EXPERIENCE CALCULATION RULES
+- Count ALL relevant work experience (full-time, part-time, contract)
+- INTERNSHIPS: Count each 3-6 month internship as 0.5 years equivalent
+- Shorter internships (<3 months): Count as 0.25 years
+- Longer internships (>6 months): Count full duration
+- FRESHERS (0 years): This is NOT a negative - evaluate based on projects and potential
+- Overlapping roles: Count only the total time span, not cumulative
+- Career gaps: Do not penalize if candidate has maintained skills through projects
+
+## 4. CONTEXT AWARENESS
+{context_instructions.get(role_context, context_instructions["general"])}
+
+## 5. CREATIVITY & INSIGHT
+Go beyond surface-level matching:
+- Identify TRANSFERABLE SKILLS from extracurricular activities
+  Example: "Led university debate team" → Communication, leadership, critical thinking
+  Example: "Organized coding bootcamp" → Project management, community building
+- Recognize POTENTIAL from projects and self-learning
+- Spot UNIQUE STRENGTHS that aren't explicitly in the JD but add value
+- Suggest how candidate's background might bring FRESH PERSPECTIVES
+
+# JOB DESCRIPTION
+{jd_text}
+
+# CANDIDATE RESUME DATA (Anonymized)
+{resume_json}
+
+# SCORING METHODOLOGY
+
+You must score the candidate on a **1-10 scale** for FIVE categories:
+
+## Category 1: SKILLS (Technical & Functional)
+- Extract required skills from JD (programming languages, tools, frameworks, methodologies)
+- Match candidate's skills semantically (exact matches AND equivalent skills)
+- Score based on:
+  - Coverage: What % of required skills are present? (40% weight)
+  - Proficiency level: Evidence of depth vs surface knowledge (30% weight)
+  - Bonus skills: Nice-to-have or adjacent skills (20% weight)
+  - Skill recency: Recently used vs outdated (10% weight)
+- 10 = Perfect match with all required + bonus skills
+- 1 = Minimal skill overlap
+
+## Category 2: EXPERIENCE (Work History)
+- Calculate total relevant years using the rules above
+- Evaluate:
+  - Years of experience vs JD requirement (40% weight)
+  - Relevance of past roles to target role (35% weight)
+  - Career progression and growth (15% weight)
+  - Industry alignment (10% weight)
+- 10 = Exceeds experience requirement with highly relevant background
+- 5 = Meets minimum threshold or fresher with strong projects
+- 1 = Significantly under-qualified or irrelevant experience
+
+## Category 3: EDUCATION & PROJECTS
+- Education: Degree level, field of study, institution reputation, GPA if available
+- Projects: Complexity, relevance, technologies used, impact/outcomes
+- Evaluate:
+  - Educational foundation for the role (40% weight)
+  - Quality and relevance of projects (40% weight)
+  - Continuous learning evidence (certifications, courses) (20% weight)
+- 10 = Top-tier education + impressive projects
+- 1 = Education/projects unrelated to role
+
+## Category 4: ACHIEVEMENTS
+- Awards, competitions, publications, certifications
+- Open-source contributions, patents, recognitions
+- Quantifiable accomplishments (revenue impact, user growth, performance metrics)
+- Evaluate:
+  - Relevance to target role (50% weight)
+  - Prestige/impact level (30% weight)
+  - Quantity and consistency (20% weight)
+- 10 = Multiple prestigious achievements directly relevant
+- 5 = Some achievements showing excellence
+- 1 = No notable achievements listed
+
+## Category 5: EXTRACURRICULAR & LEADERSHIP
+- Clubs, volunteering, organizing events, mentorship
+- Leadership roles, team building, community involvement
+- Soft skills demonstrated (communication, teamwork, initiative)
+- Evaluate:
+  - Leadership and ownership demonstrated (40% weight)
+  - Teamwork and collaboration skills (30% weight)
+  - Initiative and passion (20% weight)
+  - Cultural fit indicators (10% weight)
+- 10 = Strong leadership with significant impact
+- 5 = Moderate involvement showing soft skills
+- 1 = No extracurricular activities listed
+
+# WEIGHTS FOR OVERALL SCORE
+The overall score (1-10) is calculated as a weighted average:
+{weights_display}
+
+# OUTPUT FORMAT (STRICT JSON)
+
+You MUST respond with a valid JSON object in this EXACT format:
+
+{{
+  "sub_scores": {{
+    "skills": <float 1-10>,
+    "experience": <float 1-10>,
+    "education_projects": <float 1-10>,
+    "achievements": <float 1-10>,
+    "extracurricular": <float 1-10>
+  }},
+  "overall": <float 1-10>,
+  "justifications": {{
+    "skills": "<1-2 sentences explaining the skills score, mention key matches and gaps>",
+    "experience": "<1-2 sentences explaining experience score, mention years and relevance>",
+    "education_projects": "<1-2 sentences explaining education/projects score>",
+    "achievements": "<1-2 sentences explaining achievements score>",
+    "extracurricular": "<1-2 sentences explaining extracurricular score>"
+  }},
+  "feedback": [
+    "<Suggestion 1: Specific skill/certification to acquire>",
+    "<Suggestion 2: Experience area to develop or highlight better>",
+    "<Suggestion 3: Additional improvement or unique strength to leverage>"
+  ],
+  "strengths": [
+    "<Key strength 1>",
+    "<Key strength 2>",
+    "<Key strength 3>"
+  ],
+  "gaps": [
+    "<Critical gap 1>",
+    "<Critical gap 2>"
+  ],
+  "transferable_skills": [
+    "<Transferable skill 1 from extracurricular/projects>",
+    "<Transferable skill 2>"
+  ],
+  "hiring_recommendation": "<STRONG_FIT | GOOD_FIT | MODERATE_FIT | WEAK_FIT> - <1 sentence rationale>"
+}}
+
+# IMPORTANT NOTES
+1. Be HONEST but CONSTRUCTIVE - highlight both strengths and gaps
+2. Provide ACTIONABLE feedback that helps candidates improve
+3. Consider CONTEXT - a 7.0 fresher might be better than a 6.5 experienced candidate for a junior role
+4. Ensure JSON is VALID - use double quotes, proper escaping
+5. Be CONSISTENT - use the same evaluation criteria for all candidates
+6. Calculate overall score using the weighted formula: overall = Σ(sub_score × weight)
+
+Now, provide your comprehensive analysis:"""
+
+    return prompt
+
+
+# ============================================================================
 # MAIN SCORING FUNCTIONS
 # ============================================================================
 
