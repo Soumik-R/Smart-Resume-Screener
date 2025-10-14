@@ -414,75 +414,318 @@ Now, provide your comprehensive analysis:"""
 
 
 # ============================================================================
+# HELPER FUNCTIONS FOR MATCHING
+# ============================================================================
+
+def anonymize_resume(resume_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Anonymize resume data by removing personal identifiers
+    
+    Args:
+        resume_data: Resume data dictionary (from Resume model or dict)
+        
+    Returns:
+        Anonymized copy of resume data
+    """
+    import copy
+    anonymized = copy.deepcopy(resume_data)
+    
+    # Remove personal identifiers
+    if 'name' in anonymized:
+        anonymized['name'] = 'Anonymized Candidate'
+    if 'email' in anonymized:
+        anonymized['email'] = None
+    if 'phone' in anonymized:
+        anonymized['phone'] = None
+    
+    # Also anonymize raw_text if present (remove potential PII)
+    if 'raw_text' in anonymized:
+        # Keep raw_text but mark as anonymized
+        anonymized['raw_text'] = anonymized['raw_text'][:500] + "... [truncated for privacy]"
+    
+    return anonymized
+
+
+def parse_llm_json_response(response_text: str) -> Optional[Dict[str, Any]]:
+    """
+    Parse JSON from LLM response, handling common formatting issues
+    
+    Args:
+        response_text: Raw text response from LLM
+        
+    Returns:
+        Parsed JSON dict or None if parsing fails
+    """
+    import json
+    import re
+    
+    try:
+        # Try direct parsing first
+        return json.loads(response_text)
+    except json.JSONDecodeError:
+        pass
+    
+    # Try to extract JSON from markdown code blocks
+    json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+    if json_match:
+        try:
+            return json.loads(json_match.group(1))
+        except json.JSONDecodeError:
+            pass
+    
+    # Try to find JSON object in text
+    json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text, re.DOTALL)
+    if json_match:
+        try:
+            return json.loads(json_match.group(0))
+        except json.JSONDecodeError:
+            pass
+    
+    return None
+
+
+def validate_llm_output(output: Dict[str, Any]) -> bool:
+    """
+    Validate that LLM output has all required fields
+    
+    Args:
+        output: Parsed LLM output dictionary
+        
+    Returns:
+        True if valid, False otherwise
+    """
+    required_fields = {
+        'sub_scores': dict,
+        'overall': (int, float),
+        'justifications': dict,
+        'feedback': list,
+        'strengths': list,
+        'gaps': list,
+        'transferable_skills': list,
+        'hiring_recommendation': str
+    }
+    
+    for field, expected_type in required_fields.items():
+        if field not in output:
+            logger.warning(f"Missing required field: {field}")
+            return False
+        
+        if not isinstance(output[field], expected_type):
+            logger.warning(f"Field {field} has wrong type: expected {expected_type}, got {type(output[field])}")
+            return False
+    
+    # Validate sub_scores has all categories
+    required_categories = ['skills', 'experience', 'education_projects', 'achievements', 'extracurricular']
+    for category in required_categories:
+        if category not in output['sub_scores']:
+            logger.warning(f"Missing category in sub_scores: {category}")
+            return False
+        
+        score = output['sub_scores'][category]
+        if not isinstance(score, (int, float)) or not (1 <= score <= 10):
+            logger.warning(f"Invalid score for {category}: {score}")
+            return False
+    
+    return True
+
+
+# ============================================================================
 # MAIN SCORING FUNCTIONS
 # ============================================================================
 
-def calculate_match_score(resume_data: Dict[str, Any], jd_data: Dict[str, Any]) -> Dict[str, Any]:
+def match_resume_to_jd(
+    resume_json: str,
+    jd_text: str,
+    weights: Optional[Dict[str, float]] = None,
+    role_context: str = "general",
+    max_retries: int = 2
+) -> Dict[str, Any]:
     """
-    Use LLM to calculate a match score between resume and job description
+    Match a resume to a job description using LLM analysis
+    
+    This is the main scoring function that:
+    1. Anonymizes the resume data
+    2. Builds a comprehensive prompt
+    3. Calls GPT-4o for analysis
+    4. Parses and validates the response
+    5. Computes final weighted score
     
     Args:
-        resume_data: Parsed resume data
-        jd_data: Parsed job description data
+        resume_json: Resume data in JSON string format
+        jd_text: Job description text
+        weights: Optional custom scoring weights (defaults to DEFAULT_WEIGHTS)
+        role_context: Role level context ("junior", "senior", "mid-level", "general")
+        max_retries: Maximum retry attempts if parsing fails
+        
+    Returns:
+        Dictionary containing:
+            - sub_scores: Dict of category scores (1-10)
+            - overall: Overall weighted score (1-10)
+            - justifications: Dict of explanations per category
+            - feedback: List of improvement suggestions
+            - strengths: List of key strengths
+            - gaps: List of critical gaps
+            - transferable_skills: List of transferable skills identified
+            - hiring_recommendation: STRONG_FIT | GOOD_FIT | MODERATE_FIT | WEAK_FIT
+            - shortlisted: Boolean (True if overall > 7.0)
+            
+    Raises:
+        RuntimeError: If LLM call fails or response cannot be parsed after retries
+    """
+    import json
+    
+    if weights is None:
+        weights = DEFAULT_WEIGHTS
+    else:
+        validate_weights(weights)
+    
+    logger.info(f"Starting resume-JD matching with role_context='{role_context}'")
+    
+    # Parse resume JSON to anonymize it
+    try:
+        resume_data = json.loads(resume_json)
+        anonymized_resume = anonymize_resume(resume_data)
+        anonymized_json = json.dumps(anonymized_resume, indent=2)
+        logger.info("Resume anonymized successfully")
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid resume JSON: {e}")
+        raise ValueError(f"Invalid resume JSON format: {e}")
+    
+    # Build the comprehensive prompt
+    prompt = build_scoring_prompt(anonymized_json, jd_text, weights, role_context)
+    
+    # Call LLM with retries
+    for attempt in range(max_retries + 1):
+        try:
+            logger.info(f"Calling GPT-4o (attempt {attempt + 1}/{max_retries + 1})")
+            
+            response = client.chat.completions.create(
+                model=GPT_MODEL,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an expert HR recruiter with 10+ years of experience. Provide detailed, fair, and insightful resume analysis in valid JSON format."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=GPT_TEMPERATURE,  # 0.3 for consistent scoring
+                max_tokens=2000,  # Increased for detailed response
+                response_format={"type": "json_object"}  # Force JSON output
+            )
+            
+            response_text = response.choices[0].message.content
+            logger.info(f"Received LLM response ({len(response_text)} chars)")
+            
+            # Parse JSON response
+            output = parse_llm_json_response(response_text)
+            
+            if output is None:
+                logger.warning(f"Failed to parse JSON (attempt {attempt + 1})")
+                if attempt < max_retries:
+                    # Retry with fix-up prompt
+                    prompt = f"""The previous response was not valid JSON. Please provide the resume analysis in STRICT JSON format with these fields:
+{{
+  "sub_scores": {{"skills": <float>, "experience": <float>, "education_projects": <float>, "achievements": <float>, "extracurricular": <float>}},
+  "overall": <float>,
+  "justifications": {{"skills": "<text>", "experience": "<text>", "education_projects": "<text>", "achievements": "<text>", "extracurricular": "<text>"}},
+  "feedback": ["<suggestion 1>", "<suggestion 2>", "<suggestion 3>"],
+  "strengths": ["<strength 1>", "<strength 2>", "<strength 3>"],
+  "gaps": ["<gap 1>", "<gap 2>"],
+  "transferable_skills": ["<skill 1>", "<skill 2>"],
+  "hiring_recommendation": "<STRONG_FIT|GOOD_FIT|MODERATE_FIT|WEAK_FIT> - <rationale>"
+}}
+
+Original analysis request:
+{prompt[:1000]}...
+"""
+                    continue
+                else:
+                    raise RuntimeError("Failed to parse LLM response as JSON after all retries")
+            
+            # Validate output structure
+            if not validate_llm_output(output):
+                logger.warning(f"LLM output validation failed (attempt {attempt + 1})")
+                if attempt < max_retries:
+                    continue
+                else:
+                    raise RuntimeError("LLM output validation failed after all retries")
+            
+            # Compute final weighted score (verify LLM calculation)
+            sub_scores = output['sub_scores']
+            calculated_overall = aggregate_scores(sub_scores, weights)
+            
+            # Use calculated score (more reliable than LLM's calculation)
+            output['overall'] = calculated_overall
+            
+            # Add shortlist flag (True if score > 7.0)
+            output['shortlisted'] = calculated_overall > 7.0
+            
+            # Add metadata
+            output['weights_used'] = weights
+            output['role_context'] = role_context
+            
+            logger.info(f"Matching complete - Overall score: {calculated_overall:.1f}, Shortlisted: {output['shortlisted']}")
+            
+            return output
+            
+        except Exception as e:
+            logger.error(f"Error in LLM call (attempt {attempt + 1}): {e}")
+            if attempt < max_retries:
+                continue
+            else:
+                raise RuntimeError(f"Failed to get LLM response after {max_retries + 1} attempts: {e}")
+    
+    raise RuntimeError("Unexpected error in match_resume_to_jd")
+
+
+def calculate_match_score(resume_data: Dict[str, Any], jd_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Legacy function - wraps match_resume_to_jd for backward compatibility
+    
+    Args:
+        resume_data: Parsed resume data (dict or Resume model)
+        jd_data: Job description data (dict with 'text' or 'raw_text' field)
         
     Returns:
         Dictionary containing match score and analysis
     """
-    prompt = f"""
-You are an expert HR recruiter. Analyze the following resume against the job description and provide:
-1. A match score from 0-100 (where 100 is a perfect match)
-2. Key strengths of the candidate
-3. Missing skills or gaps
-4. A brief recommendation
-
-Resume:
-Name: {resume_data.get('name', 'N/A')}
-Skills: {', '.join(resume_data.get('skills', []))}
-Experience Summary: {resume_data.get('raw_text', '')[:500]}...
-
-Job Description Requirements:
-Required Skills: {', '.join(jd_data.get('required_skills', []))}
-Full JD: {jd_data.get('raw_text', '')[:500]}...
-
-Provide your analysis in the following format:
-SCORE: [number]
-STRENGTHS: [bullet points]
-GAPS: [bullet points]
-RECOMMENDATION: [brief recommendation]
-"""
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are an expert HR recruiter and talent assessor."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7,
-            max_tokens=500
-        )
-        
-        analysis = response.choices[0].message.content
-        
-        # Parse the response
-        score = 0
-        if "SCORE:" in analysis:
-            score_line = analysis.split("SCORE:")[1].split("\n")[0].strip()
-            try:
-                score = int(''.join(filter(str.isdigit, score_line)))
-            except ValueError:
-                score = 0
-        
-        return {
-            "match_score": score,
-            "analysis": analysis,
-            "candidate_name": resume_data.get('name', 'Unknown'),
-            "candidate_email": resume_data.get('email', ''),
-            "candidate_skills": resume_data.get('skills', [])
-        }
-        
-    except Exception as e:
-        raise RuntimeError(f"Error calling OpenAI API: {str(e)}")
+    import json
+    
+    # Convert Resume model to dict if needed
+    if hasattr(resume_data, 'model_dump'):
+        resume_dict = resume_data.model_dump()
+    elif hasattr(resume_data, 'dict'):
+        resume_dict = resume_data.dict()
+    else:
+        resume_dict = resume_data
+    
+    # Convert to JSON string
+    resume_json = json.dumps(resume_dict, default=str)
+    
+    # Extract JD text
+    jd_text = jd_data.get('text') or jd_data.get('raw_text') or str(jd_data)
+    
+    # Call new matching function
+    result = match_resume_to_jd(resume_json, jd_text)
+    
+    # Convert to legacy format for compatibility
+    return {
+        "match_score": result['overall'] * 10,  # Convert 1-10 to 0-100 scale
+        "overall_score": result['overall'],
+        "sub_scores": result['sub_scores'],
+        "analysis": json.dumps(result, indent=2),
+        "shortlisted": result['shortlisted'],
+        "candidate_name": resume_dict.get('name', 'Unknown'),
+        "candidate_email": resume_dict.get('email', ''),
+        "candidate_skills": resume_dict.get('skills', []),
+        "justifications": result['justifications'],
+        "feedback": result['feedback'],
+        "strengths": result['strengths'],
+        "gaps": result['gaps']
+    }
 
 
 def batch_score_candidates(resumes: List[Dict[str, Any]], jd_data: Dict[str, Any]) -> List[Dict[str, Any]]:
