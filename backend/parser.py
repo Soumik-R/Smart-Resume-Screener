@@ -1,18 +1,166 @@
 """
 Resume and Job Description parsing module
 Extracts structured information from PDF documents using pdfplumber and spaCy
+Enhanced with NLP for smarter entity extraction and semantic matching
 """
 import pdfplumber
 import spacy
-from typing import Dict, List, Any, Union
+from typing import Dict, List, Any, Union, Tuple, Set
 from pathlib import Path
 import re
+from difflib import SequenceMatcher
 
 # Load spaCy model
 try:
     nlp = spacy.load("en_core_web_sm")
 except OSError:
     raise RuntimeError("spaCy model 'en_core_web_sm' not found. Run: python -m spacy download en_core_web_sm")
+
+
+# ============================================================================
+# NLP Enhancement - Semantic Skill Mapping and Fuzzy Matching
+# ============================================================================
+
+# Comprehensive skill taxonomy with synonyms and related terms
+SKILL_TAXONOMY = {
+    # Programming Languages
+    "python": ["python", "py", "python3", "scripting", "python scripting"],
+    "java": ["java", "j2ee", "java ee", "jdk", "jvm"],
+    "javascript": ["javascript", "js", "es6", "ecmascript", "node"],
+    "typescript": ["typescript", "ts"],
+    "c++": ["c++", "cpp", "c plus plus"],
+    "c#": ["c#", "csharp", "c sharp", ".net"],
+    "ruby": ["ruby", "rb", "ruby on rails", "rails"],
+    "go": ["go", "golang"],
+    "rust": ["rust"],
+    "php": ["php", "php7", "php8"],
+    "swift": ["swift", "ios development"],
+    "kotlin": ["kotlin", "android development"],
+    "scala": ["scala"],
+    "r": ["r programming", "r language"],
+    
+    # Web Technologies
+    "html": ["html", "html5", "markup"],
+    "css": ["css", "css3", "styling", "sass", "less"],
+    "react": ["react", "reactjs", "react.js"],
+    "angular": ["angular", "angularjs"],
+    "vue": ["vue", "vuejs", "vue.js"],
+    "node.js": ["node", "nodejs", "node.js"],
+    "express": ["express", "expressjs", "express.js"],
+    "django": ["django"],
+    "flask": ["flask"],
+    "fastapi": ["fastapi", "fast api"],
+    "spring boot": ["spring", "spring boot", "spring framework"],
+    
+    # Databases
+    "sql": ["sql", "structured query language", "database queries"],
+    "mongodb": ["mongodb", "mongo", "nosql"],
+    "postgresql": ["postgresql", "postgres", "psql"],
+    "mysql": ["mysql"],
+    "redis": ["redis", "caching"],
+    "elasticsearch": ["elasticsearch", "elastic search", "elk"],
+    "dynamodb": ["dynamodb", "dynamo"],
+    "oracle": ["oracle", "oracle db"],
+    
+    # Cloud Platforms
+    "aws": ["aws", "amazon web services", "ec2", "s3", "lambda"],
+    "azure": ["azure", "microsoft azure"],
+    "gcp": ["gcp", "google cloud", "google cloud platform"],
+    
+    # DevOps & Tools
+    "docker": ["docker", "containerization", "containers"],
+    "kubernetes": ["kubernetes", "k8s", "container orchestration"],
+    "jenkins": ["jenkins", "ci/cd", "continuous integration"],
+    "git": ["git", "version control", "github", "gitlab"],
+    "terraform": ["terraform", "infrastructure as code", "iac"],
+    "ansible": ["ansible", "configuration management"],
+    
+    # AI/ML
+    "machine learning": ["machine learning", "ml", "supervised learning", "unsupervised learning"],
+    "deep learning": ["deep learning", "neural networks", "dl"],
+    "nlp": ["nlp", "natural language processing", "text processing"],
+    "computer vision": ["computer vision", "cv", "image processing"],
+    "tensorflow": ["tensorflow", "tf"],
+    "pytorch": ["pytorch", "torch"],
+    "scikit-learn": ["sklearn", "scikit-learn", "scikit learn"],
+    
+    # Methodologies
+    "agile": ["agile", "agile methodology", "agile development"],
+    "scrum": ["scrum", "scrum master"],
+    "devops": ["devops", "dev ops"],
+}
+
+
+def fuzzy_match(text: str, target: str, threshold: float = 0.8) -> bool:
+    """
+    Fuzzy string matching using SequenceMatcher
+    
+    Args:
+        text: Text to match
+        target: Target string
+        threshold: Similarity threshold (0-1)
+        
+    Returns:
+        True if similarity >= threshold
+    """
+    return SequenceMatcher(None, text.lower(), target.lower()).ratio() >= threshold
+
+
+def semantic_skill_matcher(text: str) -> Set[str]:
+    """
+    Match skills using semantic understanding and fuzzy matching
+    Maps related terms to canonical skill names
+    
+    Args:
+        text: Text containing potential skills
+        
+    Returns:
+        Set of matched canonical skill names
+    """
+    matched_skills = set()
+    text_lower = text.lower()
+    
+    # Direct matching with taxonomy
+    for canonical_skill, variants in SKILL_TAXONOMY.items():
+        for variant in variants:
+            if variant in text_lower:
+                matched_skills.add(canonical_skill.title())
+                break
+            # Fuzzy matching for close matches
+            elif fuzzy_match(variant, text_lower, threshold=0.85):
+                matched_skills.add(canonical_skill.title())
+                break
+    
+    return matched_skills
+
+
+def extract_entities_with_nlp(text: str) -> Dict[str, List[str]]:
+    """
+    Extract named entities using spaCy NER
+    Extracts ORG (organizations/companies), DATE (timelines), GPE (locations)
+    
+    Args:
+        text: Text to process
+        
+    Returns:
+        Dictionary with entity types as keys and lists of entities as values
+    """
+    doc = nlp(text)
+    
+    entities = {
+        "ORG": [],      # Organizations (companies)
+        "DATE": [],     # Dates and timelines
+        "GPE": [],      # Locations (cities, countries)
+        "PERSON": [],   # Person names
+        "MONEY": [],    # Monetary values
+        "PERCENT": [],  # Percentages
+    }
+    
+    for ent in doc.ents:
+        if ent.label_ in entities:
+            entities[ent.label_].append(ent.text)
+    
+    return entities
 
 
 # ============================================================================
@@ -303,74 +451,58 @@ def extract_name(text: str) -> str:
 
 def extract_skills(text: str) -> List[str]:
     """
-    Extract skills from text using NLP and keyword matching
-    Filters out common prefixes like "proficient in"
+    Extract skills from text using enhanced NLP and semantic matching
+    Uses skill taxonomy and fuzzy matching for better accuracy
     
     Args:
         text: Input text (preferably from skills section)
         
     Returns:
-        List of identified skills
+        List of identified canonical skills
     """
-    # Comprehensive technical skills database
-    skill_keywords = [
-        # Programming Languages
-        "python", "java", "javascript", "typescript", "c++", "c#", "ruby", "go", "rust",
-        "php", "swift", "kotlin", "scala", "r", "matlab", "perl", "shell", "bash",
-        
-        # Web Frameworks
-        "react", "angular", "vue", "node.js", "express", "django", "flask", "fastapi",
-        "spring boot", "asp.net", "laravel", "rails", "nextjs", "gatsby",
-        
-        # Databases
-        "mongodb", "postgresql", "mysql", "redis", "elasticsearch", "dynamodb",
-        "oracle", "sql server", "cassandra", "neo4j", "sqlite",
-        
-        # Cloud & DevOps
-        "aws", "azure", "gcp", "docker", "kubernetes", "terraform", "ansible",
-        "jenkins", "gitlab", "github actions", "ci/cd", "circleci",
-        
-        # AI/ML
-        "machine learning", "deep learning", "nlp", "computer vision", "tensorflow",
-        "pytorch", "keras", "scikit-learn", "opencv", "hugging face",
-        
-        # Tools
-        "git", "jira", "confluence", "slack", "postman", "swagger",
-        
-        # Methodologies
-        "agile", "scrum", "kanban", "test-driven development", "tdd"
-    ]
-    
     # Remove common prefixes
-    text = re.sub(r'(?:proficient in|experienced with|familiar with|knowledge of)[\s:]+', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'(?:proficient in|experienced with|familiar with|knowledge of|expertise in)[\s:]+', '', text, flags=re.IGNORECASE)
     
-    # Split by common delimiters
+    found_skills = set()
+    
+    # Method 1: Semantic skill matcher (uses taxonomy and fuzzy matching)
+    semantic_skills = semantic_skill_matcher(text)
+    found_skills.update(semantic_skills)
+    
+    # Method 2: Split by delimiters and match individual items
     items = re.split(r'[,•|/\n]+', text)
     
-    found_skills = []
-    text_lower = text.lower()
-    
-    # Keyword matching
-    for skill in skill_keywords:
-        if skill in text_lower:
-            # Capitalize properly
-            found_skills.append(skill.title())
-    
-    # Also extract from split items (for skills not in keyword list)
     for item in items:
         item = item.strip()
-        if item and len(item) > 2 and len(item) < 30:
-            # Remove leading symbols like - or *
-            item = re.sub(r'^[-*•\s]+', '', item)
-            if item and not any(prefix in item.lower() for prefix in ['proficient', 'experienced', 'familiar']):
-                # Use spaCy for better extraction
-                doc = nlp(item)
-                for token in doc:
-                    if token.pos_ in ['NOUN', 'PROPN'] and len(token.text) > 2:
-                        found_skills.append(token.text.title())
+        if not item or len(item) < 2 or len(item) > 50:
+            continue
+        
+        # Remove leading symbols
+        item = re.sub(r'^[-*•\s]+', '', item)
+        
+        # Check against taxonomy
+        item_skills = semantic_skill_matcher(item)
+        found_skills.update(item_skills)
+        
+        # Use NLP for additional extraction
+        if len(item) < 30:
+            doc = nlp(item)
+            for token in doc:
+                if token.pos_ in ['NOUN', 'PROPN'] and len(token.text) > 2:
+                    # Check if this token matches any skill variant
+                    token_skills = semantic_skill_matcher(token.text)
+                    if token_skills:
+                        found_skills.update(token_skills)
     
-    # Remove duplicates and return
-    return list(set(found_skills))
+    # Method 3: Extract using spaCy entities
+    doc = nlp(text)
+    for ent in doc.ents:
+        if ent.label_ in ['PRODUCT', 'ORG']:  # Often tech products/frameworks
+            ent_skills = semantic_skill_matcher(ent.text)
+            found_skills.update(ent_skills)
+    
+    # Convert to sorted list
+    return sorted(list(found_skills))
 
 
 from datetime import datetime
@@ -428,7 +560,8 @@ def parse_dates_and_calculate_years(text: str) -> float:
 
 def extract_experience(text: str) -> Experience:
     """
-    Extract work experience from resume section
+    Extract work experience from resume section using NLP
+    Uses spaCy NER to identify organizations and dates
     
     Args:
         text: Experience section text
@@ -438,7 +571,12 @@ def extract_experience(text: str) -> Experience:
     """
     roles = []
     
-    # Split into individual role blocks (separated by blank lines or bullet points)
+    # Extract entities using spaCy
+    entities = extract_entities_with_nlp(text)
+    organizations = entities.get('ORG', [])
+    dates = entities.get('DATE', [])
+    
+    # Split into individual role blocks (separated by blank lines)
     role_blocks = re.split(r'\n\s*\n', text)
     
     for block in role_blocks:
@@ -454,28 +592,37 @@ def extract_experience(text: str) -> Experience:
         description = ""
         is_internship = False
         
+        # Check for internship keywords
+        if re.search(r'\bintern\b|\binternship\b', block, re.IGNORECASE):
+            is_internship = True
+        
+        # Use NLP to extract organizations from this block
+        block_doc = nlp(block)
+        block_orgs = [ent.text for ent in block_doc.ents if ent.label_ == 'ORG']
+        if block_orgs:
+            company = block_orgs[0]  # Take first organization
+        
         for i, line in enumerate(lines):
             line = line.strip()
             
-            # Check for internship keywords
-            if re.search(r'\bintern\b', line, re.IGNORECASE):
-                is_internship = True
-            
             # Check for date patterns (usually contains dates)
-            if re.search(r'\d{4}|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec', line, re.IGNORECASE):
+            if re.search(r'\d{4}|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|present', line, re.IGNORECASE):
                 duration = line
-                # Previous line might be company or title
-                if i > 0:
-                    if not role_title:
-                        role_title = lines[i-1].strip()
-                    if i > 1 and not company:
-                        company = lines[i-2].strip()
+                # Previous lines might be company or title
+                if i > 0 and not role_title:
+                    role_title = lines[i-1].strip()
+                if i > 1 and not company:
+                    potential_company = lines[i-2].strip()
+                    # Use NLP to verify it's an organization
+                    potential_doc = nlp(potential_company)
+                    if any(ent.label_ == 'ORG' for ent in potential_doc.ents):
+                        company = potential_company
                 continue
             
-            # Extract company (often has keywords like "at", "Inc", "Corp", "Ltd")
+            # Extract company (often has keywords or is an NLP ORG entity)
             if re.search(r'\bat\b|Inc|Corp|Ltd|LLC|Company|Technologies', line, re.IGNORECASE):
                 if not company:
-                    company = line
+                    company = re.sub(r'^at\s+', '', line, flags=re.IGNORECASE).strip()
                 continue
             
             # Build description from remaining lines
@@ -802,3 +949,222 @@ def parse_job_description(pdf_path: str) -> Dict[str, Any]:
     }
     
     return jd_data
+
+
+# ============================================================================
+# Testing and Validation Functions
+# ============================================================================
+
+def test_parser_on_sample(file_path: str, verbose: bool = True) -> Resume:
+    """
+    Test the parser on a sample resume file and display results
+    Manually verify accuracy against expected data
+    
+    Args:
+        file_path: Path to sample resume (PDF or text file)
+        verbose: If True, print detailed extraction results
+        
+    Returns:
+        Parsed Resume object
+        
+    Example:
+        >>> resume = test_parser_on_sample('samples/john_doe_resume.pdf')
+        >>> print(f"Accuracy: {calculate_accuracy(resume, expected_data)}")
+    """
+    import json
+    from pathlib import Path
+    
+    if not Path(file_path).exists():
+        raise FileNotFoundError(f"Sample file not found: {file_path}")
+    
+    print("=" * 80)
+    print(f"TESTING PARSER ON: {file_path}")
+    print("=" * 80)
+    
+    # Parse the resume
+    resume = parse_resume_to_model(file_path)
+    
+    if verbose:
+        print("\n[BASIC INFORMATION]")
+        print(f"Name: {resume.name}")
+        print(f"Email: {resume.email}")
+        print(f"Phone: {resume.phone}")
+        
+        print("\n[SKILLS]")
+        print(f"Total: {len(resume.skills)} skills")
+        print(f"Skills: {', '.join(resume.skills)}")
+        
+        print("\n[EXPERIENCE]")
+        print(f"Total Experience: {resume.experience.years} years")
+        print(f"Number of Roles: {len(resume.experience.roles)}")
+        print(f"Is Fresher: {resume.is_fresher()}")
+        for i, role in enumerate(resume.experience.roles, 1):
+            print(f"\nRole {i}:")
+            print(f"  Title: {role.title}")
+            print(f"  Company: {role.company}")
+            print(f"  Duration: {role.duration}")
+            print(f"  Internship: {role.is_internship}")
+            if role.description:
+                print(f"  Description: {role.description[:100]}...")
+        
+        print("\n[EDUCATION]")
+        print(f"Total: {len(resume.education)} qualification(s)")
+        for edu in resume.education:
+            print(f"  - {edu.degree} in {edu.field}")
+            print(f"    {edu.institution} ({edu.year or 'Year not found'})")
+        
+        print("\n[PROJECTS]")
+        print(f"Total: {len(resume.projects)} project(s)")
+        for proj in resume.projects:
+            print(f"  - {proj.name}")
+            print(f"    Technologies: {', '.join(proj.technologies[:5])}")
+            print(f"    Description: {proj.description[:80]}...")
+        
+        print("\n[ACHIEVEMENTS]")
+        print(f"Total: {len(resume.achievements)} achievement(s)")
+        for ach in resume.achievements[:5]:
+            print(f"  - {ach}")
+        
+        print("\n[EXTRA-CURRICULAR]")
+        print(f"Total: {len(resume.extracurricular)} activit(ies)")
+        for act in resume.extracurricular:
+            print(f"  - {act}")
+        
+        print("\n[JSON OUTPUT]")
+        # Convert to dict for JSON serialization
+        resume_dict = {
+            "name": resume.name,
+            "email": resume.email,
+            "phone": resume.phone,
+            "skills": resume.skills,
+            "experience": {
+                "years": resume.experience.years,
+                "roles": [
+                    {
+                        "title": role.title,
+                        "company": role.company,
+                        "duration": role.duration,
+                        "description": role.description,
+                        "is_internship": role.is_internship
+                    }
+                    for role in resume.experience.roles
+                ]
+            },
+            "education": [
+                {
+                    "degree": edu.degree,
+                    "field": edu.field,
+                    "institution": edu.institution,
+                    "year": edu.year
+                }
+                for edu in resume.education
+            ],
+            "projects": [
+                {
+                    "name": proj.name,
+                    "technologies": proj.technologies,
+                    "description": proj.description
+                }
+                for proj in resume.projects
+            ],
+            "achievements": resume.achievements,
+            "extracurricular": resume.extracurricular,
+            "is_fresher": resume.is_fresher()
+        }
+        
+        print(json.dumps(resume_dict, indent=2))
+        
+        print("\n" + "=" * 80)
+        print("MANUAL VERIFICATION CHECKLIST:")
+        print("=" * 80)
+        print("□ Name extracted correctly?")
+        print("□ Contact info (email/phone) correct?")
+        print(f"□ Skills comprehensive? (Found {len(resume.skills)}, aim for 80%+ accuracy)")
+        print(f"□ Experience years calculated correctly? ({resume.experience.years} years)")
+        print(f"□ All roles extracted? ({len(resume.experience.roles)} roles found)")
+        print("□ Internships flagged correctly?")
+        print(f"□ Education complete? ({len(resume.education)} entries)")
+        print(f"□ Projects captured? ({len(resume.projects)} projects)")
+        print(f"□ Achievements included? ({len(resume.achievements)} achievements)")
+        print("□ Fresher classification correct?")
+        print("=" * 80)
+    
+    return resume
+
+
+def batch_test_parser(samples_dir: str = "samples") -> None:
+    """
+    Test parser on all sample files in a directory
+    Useful for validation across multiple resumes
+    
+    Args:
+        samples_dir: Directory containing sample resume files
+    """
+    from pathlib import Path
+    
+    samples_path = Path(samples_dir)
+    if not samples_path.exists():
+        print(f"Samples directory not found: {samples_dir}")
+        return
+    
+    # Find all PDF and text files
+    resume_files = list(samples_path.glob("*.pdf")) + list(samples_path.glob("*.txt"))
+    
+    if not resume_files:
+        print(f"No resume files found in {samples_dir}")
+        print("Add .pdf or .txt resume files to test the parser")
+        return
+    
+    print(f"Found {len(resume_files)} resume file(s) to test")
+    print("=" * 80)
+    
+    results = []
+    for file_path in resume_files:
+        try:
+            print(f"\nTesting: {file_path.name}")
+            resume = test_parser_on_sample(str(file_path), verbose=False)
+            
+            # Summary stats
+            stats = {
+                "file": file_path.name,
+                "name": resume.name,
+                "skills_count": len(resume.skills),
+                "experience_years": resume.experience.years,
+                "roles_count": len(resume.experience.roles),
+                "education_count": len(resume.education),
+                "projects_count": len(resume.projects),
+                "is_fresher": resume.is_fresher()
+            }
+            results.append(stats)
+            
+            print(f"✅ Parsed successfully: {resume.name}")
+            print(f"   Skills: {stats['skills_count']}, Experience: {stats['experience_years']}yr, "
+                  f"Roles: {stats['roles_count']}, Projects: {stats['projects_count']}")
+            
+        except Exception as e:
+            print(f"❌ Error parsing {file_path.name}: {str(e)}")
+            results.append({"file": file_path.name, "error": str(e)})
+    
+    print("\n" + "=" * 80)
+    print("BATCH TEST SUMMARY")
+    print("=" * 80)
+    successful = len([r for r in results if 'error' not in r])
+    print(f"Successfully parsed: {successful}/{len(resume_files)} files")
+    print("=" * 80)
+
+
+if __name__ == "__main__":
+    """
+    Run parser tests when module is executed directly
+    Usage: python backend/parser.py
+    """
+    import sys
+    
+    if len(sys.argv) > 1:
+        # Test specific file
+        file_path = sys.argv[1]
+        test_parser_on_sample(file_path)
+    else:
+        # Batch test all samples
+        print("Testing parser on all sample files...")
+        batch_test_parser()
