@@ -49,7 +49,7 @@ const Dashboard = () => {
     pageSize: 10,
     total: 0
   });
-  const [sortConfig, setSortConfig] = useState({
+  const [sortConfig] = useState({
     sortBy: 'overall_score',
     sortOrder: 'desc'
   });
@@ -276,7 +276,6 @@ const Dashboard = () => {
             size="small"
             icon={<ExperimentOutlined />}
             onClick={() => openWhatIfSimulator(record)}
-            style={{ backgroundColor: '#000080', borderColor: '#000080' }}
           >
             What-If
           </Button>
@@ -437,7 +436,6 @@ const Dashboard = () => {
               type="primary"
               icon={<DownloadOutlined />}
               onClick={handleExport}
-              style={{ backgroundColor: '#000080', borderColor: '#000080' }}
             >
               Export CSV
             </Button>

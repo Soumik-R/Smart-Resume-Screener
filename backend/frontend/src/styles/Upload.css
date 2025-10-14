@@ -14,6 +14,67 @@
   margin: 0 auto;
 }
 
+/* Titles and Headers */
+.upload-title {
+  color: #000080 !important;
+}
+
+body.dark-mode .upload-title {
+  color: #40a9ff !important;
+}
+
+.section-title {
+  color: #000080 !important;
+}
+
+body.dark-mode .section-title {
+  color: #40a9ff !important;
+}
+
+.section-divider {
+  border-color: #000080;
+}
+
+body.dark-mode .section-divider {
+  border-color: #1890ff;
+}
+
+/* Textarea */
+.jd-textarea {
+  font-size: 14px;
+  border-color: #000080 !important;
+}
+
+body.dark-mode .jd-textarea {
+  border-color: #1890ff !important;
+}
+
+/* File List */
+.file-list-title {
+  color: #000080;
+}
+
+body.dark-mode .file-list-title {
+  color: #40a9ff;
+}
+
+.file-name {
+  color: #000080;
+}
+
+body.dark-mode .file-name {
+  color: #ffffff;
+}
+
+/* Progress */
+.progress-text {
+  color: #000080;
+}
+
+body.dark-mode .progress-text {
+  color: #40a9ff;
+}
+
 /* Dark Mode Upload Styles */
 body.dark-mode .upload-container {
   background: transparent;
@@ -123,6 +184,14 @@ body.dark-mode .dropzone-text {
   color: #52c41a;
   margin-bottom: 24px;
   animation: scaleIn 0.5s ease-out;
+}
+
+.success-title {
+  color: #000080 !important;
+}
+
+body.dark-mode .success-title {
+  color: #40a9ff !important;
 }
 
 @keyframes scaleIn {

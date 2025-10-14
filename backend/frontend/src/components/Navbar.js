@@ -1,12 +1,9 @@
 import React from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { Layout, Menu, Switch, Space } from 'antd';
+import { Link } from 'react-router-dom';
+import { Layout, Switch, Space } from 'antd';
 import { 
-  UploadOutlined, 
-  DashboardOutlined, 
   BulbOutlined,
-  ThunderboltOutlined,
-  HomeOutlined
+  ThunderboltOutlined
 } from '@ant-design/icons';
 import { useTheme } from '../contexts/ThemeContext';
 import '../styles/Navbar.css';
@@ -14,22 +11,7 @@ import '../styles/Navbar.css';
 const { Header } = Layout;
 
 const Navbar = () => {
-  const location = useLocation();
   const { isDarkMode, toggleTheme } = useTheme();
-
-  const menuItems = [
-    {
-      key: '/upload',
-      icon: <UploadOutlined />,
-      label: <Link to="/upload">Upload</Link>,
-    },
-    {
-      key: '/dashboard',
-      icon: <DashboardOutlined />,
-      label: 'Dashboard',
-      disabled: true,
-    }
-  ];
 
   return (
     <Header className={`navbar-header ${isDarkMode ? 'dark' : 'light'}`}>
@@ -40,19 +22,9 @@ const Navbar = () => {
           <span className="logo-text">Smart Screener</span>
         </Link>
 
-        {/* Desktop Menu */}
-        <div className="navbar-menu-desktop">
-          <Menu
-            mode="horizontal"
-            selectedKeys={[location.pathname]}
-            items={menuItems}
-            className="navbar-menu"
-            style={{ 
-              backgroundColor: 'transparent',
-              borderBottom: 'none',
-              minWidth: '200px'
-            }}
-          />
+        {/* Center Branding */}
+        <div className="navbar-center-brand">
+          <span className="center-brand-text">Unthinkable</span>
         </div>
 
         {/* Right Section */}
@@ -70,26 +42,6 @@ const Navbar = () => {
             />
           </Space>
         </Space>
-
-        {/* Mobile Menu */}
-        <div className="navbar-menu-mobile">
-          <Menu
-            mode="horizontal"
-            selectedKeys={[location.pathname]}
-            items={[
-              {
-                key: 'home',
-                icon: <HomeOutlined />,
-                label: <Link to="/upload">Home</Link>,
-              }
-            ]}
-            className="navbar-menu-mobile-items"
-            style={{ 
-              backgroundColor: 'transparent',
-              borderBottom: 'none'
-            }}
-          />
-        </div>
       </div>
     </Header>
   );

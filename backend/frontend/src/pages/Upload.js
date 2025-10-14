@@ -27,6 +27,7 @@ const { Title, Text, Paragraph } = Typography;
 
 const UploadPage = () => {
   const navigate = useNavigate();
+  // const { isDarkMode } = useTheme(); // Removed - handled by ConfigProvider
   
   // State management
   const [jdText, setJdText] = useState('');
@@ -182,7 +183,7 @@ const UploadPage = () => {
         <Card className="upload-card success-card">
           <div className="success-content">
             <CheckCircleOutlined className="success-icon" />
-            <Title level={2} style={{ color: '#000080' }}>Upload Successful!</Title>
+            <Title level={2} className="success-title">Upload Successful!</Title>
             <Paragraph className="success-text">
               Successfully processed {successData.totalResumes} resume(s) and matched them 
               against your job description.
@@ -209,8 +210,6 @@ const UploadPage = () => {
                 size="large"
                 onClick={handleViewShortlist}
                 style={{ 
-                  backgroundColor: '#000080', 
-                  borderColor: '#000080',
                   height: '45px',
                   fontSize: '16px',
                   fontWeight: 'bold'
@@ -239,13 +238,13 @@ const UploadPage = () => {
   return (
     <div className="upload-container">
       <Card className="upload-card">
-        <Title level={2} style={{ color: '#000080', textAlign: 'center', marginBottom: '30px' }}>
+        <Title level={2} className="upload-title" style={{ textAlign: 'center', marginBottom: '30px' }}>
           Upload Job Description & Resumes
         </Title>
         
         {/* Job Description Section */}
         <div className="form-section">
-          <Title level={4} style={{ color: '#000080' }}>
+          <Title level={4} className="section-title">
             1. Enter Job Description
           </Title>
           <TextArea
@@ -256,21 +255,18 @@ const UploadPage = () => {
             disabled={loading}
             showCount
             maxLength={50000}
-            style={{ 
-              fontSize: '14px',
-              borderColor: '#000080'
-            }}
+            className="jd-textarea"
           />
           <Text type="secondary" style={{ marginTop: '8px', display: 'block' }}>
             Include job title, requirements, responsibilities, and qualifications.
           </Text>
         </div>
 
-        <Divider style={{ borderColor: '#000080' }} />
+        <Divider className="section-divider" />
 
         {/* Resume Upload Section */}
         <div className="form-section">
-          <Title level={4} style={{ color: '#000080' }}>
+          <Title level={4} className="section-title">
             2. Upload Resumes (1-50 files)
           </Title>
           
@@ -297,7 +293,7 @@ const UploadPage = () => {
           {/* File List */}
           {files.length > 0 && (
             <div className="file-list">
-              <Text strong style={{ color: '#000080' }}>
+              <Text strong className="file-list-title">
                 Selected Files ({files.length}):
               </Text>
               <List
@@ -317,7 +313,7 @@ const UploadPage = () => {
                     ]}
                   >
                     <List.Item.Meta
-                      title={<Text style={{ color: '#000080' }}>{item.name}</Text>}
+                      title={<Text className="file-name">{item.name}</Text>}
                       description={
                         <Space>
                           <Tag color="blue">{item.type.includes('pdf') ? 'PDF' : 'TXT'}</Tag>
@@ -333,17 +329,17 @@ const UploadPage = () => {
           )}
         </div>
 
-        <Divider style={{ borderColor: '#000080' }} />
+        <Divider className="section-divider" />
 
         {/* Submit Section */}
         <div className="submit-section">
           {loading && (
             <div className="progress-container">
               <Spin 
-                indicator={<LoadingOutlined style={{ fontSize: 32, color: '#000080' }} spin />}
+                indicator={<LoadingOutlined style={{ fontSize: 32 }} spin />}
                 size="large"
               />
-              <Text strong style={{ color: '#000080', marginTop: '16px' }}>
+              <Text strong className="progress-text" style={{ marginTop: '16px' }}>
                 {uploadProgress}
               </Text>
             </div>
@@ -358,8 +354,6 @@ const UploadPage = () => {
                 onClick={handleSubmit}
                 disabled={!jdText.trim() || files.length === 0}
                 style={{
-                  backgroundColor: '#000080',
-                  borderColor: '#000080',
                   height: '50px',
                   fontSize: '16px',
                   fontWeight: 'bold',

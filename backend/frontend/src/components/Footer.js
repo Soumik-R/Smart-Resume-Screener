@@ -25,22 +25,16 @@ const Footer = () => {
               <ThunderboltOutlined className="footer-icon" />
               <div>
                 <Text strong className="footer-title">Smart Resume Screener</Text>
-                <br />
-                <Text type="secondary" className="footer-subtitle">AI-Powered Recruitment</Text>
               </div>
             </Space>
           </div>
 
           <Divider type="vertical" className="footer-divider" />
 
-          {/* Version Section */}
+          {/* Developer Section */}
           <div className="footer-version">
             <Space direction="vertical" size={0}>
-              <Text className="footer-version-label">Version</Text>
-              <Text strong className="footer-version-number">1.0.0</Text>
-              <Text type="secondary" className="footer-tech">
-                FastAPI + React + GPT-4o
-              </Text>
+              <Text strong className="footer-developer">Developed by Soumik Roy</Text>
             </Space>
           </div>
 
@@ -67,10 +61,7 @@ const Footer = () => {
         <div className="footer-mobile">
           <Space direction="vertical" align="center" size="small" style={{ width: '100%' }}>
             <Text strong className="footer-title">Smart Resume Screener</Text>
-            <Text type="secondary">Version 1.0.0</Text>
-            <Text type="secondary" className="footer-tech">
-              FastAPI + React + GPT-4o
-            </Text>
+            <Text strong className="footer-developer">Developed by Soumik Roy</Text>
             <Link 
               href="https://github.com/Soumik-R/Smart-Resume-Screener" 
               target="_blank"
