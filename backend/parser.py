@@ -2,19 +2,136 @@
 Resume and Job Description parsing module
 Extracts structured information from PDF documents using pdfplumber and spaCy
 Enhanced with NLP for smarter entity extraction and semantic matching
+Includes comprehensive error handling, validation, and debugging features
 """
 import pdfplumber
 import spacy
-from typing import Dict, List, Any, Union, Tuple, Set
+from typing import Dict, List, Any, Union, Tuple, Set, Optional
 from pathlib import Path
 import re
 from difflib import SequenceMatcher
+import logging
+import json
+from datetime import datetime
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Load spaCy model
 try:
     nlp = spacy.load("en_core_web_sm")
+    logger.info("spaCy model 'en_core_web_sm' loaded successfully")
 except OSError:
+    logger.error("spaCy model 'en_core_web_sm' not found")
     raise RuntimeError("spaCy model 'en_core_web_sm' not found. Run: python -m spacy download en_core_web_sm")
+
+
+# ============================================================================
+# Error Handling and Validation
+# ============================================================================
+
+class ParserError(Exception):
+    """Base exception for parser errors"""
+    pass
+
+
+class FileReadError(ParserError):
+    """Raised when file cannot be read"""
+    pass
+
+
+class ValidationError(ParserError):
+    """Raised when parsed data fails validation"""
+    pass
+
+
+def save_debug_output(data: Dict[str, Any], file_path: str, suffix: str = "debug") -> str:
+    """
+    Save extracted data to JSON file for debugging
+    
+    Args:
+        data: Dictionary to save
+        file_path: Original file path (used to generate debug filename)
+        suffix: Suffix for debug file (default: "debug")
+        
+    Returns:
+        Path to saved debug file
+    """
+    try:
+        # Create debug directory if it doesn't exist
+        debug_dir = Path("debug_output")
+        debug_dir.mkdir(exist_ok=True)
+        
+        # Generate debug filename
+        original_name = Path(file_path).stem
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        debug_file = debug_dir / f"{original_name}_{suffix}_{timestamp}.json"
+        
+        # Save to JSON
+        with open(debug_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, default=str)
+        
+        logger.info(f"Debug output saved to: {debug_file}")
+        return str(debug_file)
+        
+    except Exception as e:
+        logger.error(f"Failed to save debug output: {e}")
+        return ""
+
+
+def validate_resume(resume: 'Resume') -> List[str]:
+    """
+    Validate parsed resume data and return list of warnings
+    
+    Args:
+        resume: Resume object to validate
+        
+    Returns:
+        List of warning messages
+    """
+    warnings = []
+    
+    # Check required fields
+    if not resume.name or resume.name == "Unknown":
+        warnings.append("⚠️  Name not detected - consider checking first line of resume")
+    
+    if not resume.email:
+        warnings.append("⚠️  Email not found - ensure contact info is clearly visible")
+    
+    if not resume.phone:
+        warnings.append("⚠️  Phone number not found")
+    
+    # Check skills
+    if not resume.skills or len(resume.skills) == 0:
+        warnings.append("⚠️  No skills detected - check if resume has a Skills section")
+    elif len(resume.skills) < 3:
+        warnings.append(f"⚠️  Only {len(resume.skills)} skill(s) found - may need more comprehensive skills list")
+    
+    # Check experience
+    if resume.experience.years == 0.0 and not resume.experience.roles:
+        warnings.append("ℹ️  No experience detected - candidate appears to be a fresher")
+    elif resume.experience.years == 0.0 and resume.experience.roles:
+        warnings.append("ℹ️  Experience detected but years = 0 - check date parsing")
+    
+    # Check if only internships
+    if resume.experience.roles:
+        if all(role.is_internship for role in resume.experience.roles):
+            warnings.append("ℹ️  All roles are internships - candidate is likely a fresher")
+    
+    # Check education
+    if not resume.education or len(resume.education) == 0:
+        warnings.append("⚠️  No education information found")
+    
+    # Check if all fields are empty (likely parsing failure)
+    if (not resume.skills and not resume.experience.roles and 
+        not resume.education and not resume.projects):
+        warnings.append("❌ CRITICAL: No data extracted - file may be corrupted or format unsupported")
+    
+    return warnings
 
 
 # ============================================================================
@@ -205,7 +322,7 @@ def clean_text(text: str) -> str:
 
 def read_pdf(file_path: str) -> str:
     """
-    Read and extract text from a PDF file
+    Read and extract text from a PDF file with comprehensive error handling
     Handles multi-page PDFs by concatenating all pages
     
     Args:
@@ -215,50 +332,77 @@ def read_pdf(file_path: str) -> str:
         Extracted and cleaned text
         
     Raises:
-        FileNotFoundError: If the file doesn't exist
-        ValueError: If the file cannot be read or is corrupted
+        FileReadError: If the file cannot be read or processed
     """
     path = Path(file_path)
     
+    # Validate file exists
     if not path.exists():
-        raise FileNotFoundError(f"PDF file not found: {file_path}")
+        error_msg = f"PDF file not found: {file_path}"
+        logger.error(error_msg)
+        raise FileReadError(error_msg)
     
+    # Validate file extension
     if path.suffix.lower() != '.pdf':
-        raise ValueError(f"File is not a PDF: {file_path}")
+        error_msg = f"File is not a PDF: {file_path} (extension: {path.suffix})"
+        logger.error(error_msg)
+        raise FileReadError(error_msg)
+    
+    # Check file size (warn if > 10MB)
+    file_size_mb = path.stat().st_size / (1024 * 1024)
+    if file_size_mb > 10:
+        logger.warning(f"Large PDF file: {file_size_mb:.1f}MB - processing may be slow")
     
     try:
         text = ""
         with pdfplumber.open(file_path) as pdf:
             # Check if PDF has pages
             if len(pdf.pages) == 0:
-                raise ValueError("PDF file is empty (no pages)")
+                error_msg = "PDF file is empty (no pages)"
+                logger.error(error_msg)
+                raise FileReadError(error_msg)
+            
+            logger.info(f"Processing PDF with {len(pdf.pages)} page(s)")
             
             # Extract text from all pages
             for page_num, page in enumerate(pdf.pages, 1):
-                page_text = page.extract_text()
-                if page_text:
-                    text += page_text + "\n"
-                else:
-                    # Warn about empty pages but continue
-                    print(f"Warning: Page {page_num} is empty or couldn't be extracted")
+                try:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text + "\n"
+                    else:
+                        logger.warning(f"Page {page_num} is empty or couldn't be extracted")
+                except Exception as e:
+                    logger.warning(f"Error extracting page {page_num}: {e}")
+                    continue
         
+        # Validate extracted text
         if not text.strip():
-            raise ValueError("No text could be extracted from PDF")
+            error_msg = "No text could be extracted from PDF - file may be image-based or corrupted"
+            logger.error(error_msg)
+            raise FileReadError(error_msg)
         
         # Clean the extracted text
         cleaned_text = clean_text(text)
         
+        logger.info(f"Successfully extracted {len(cleaned_text)} characters from PDF")
         return cleaned_text
         
-    except pdfplumber.pdfminer.pdfparser.PDFSyntaxError:
-        raise ValueError(f"PDF file is corrupted or malformed: {file_path}")
+    except pdfplumber.pdfminer.pdfparser.PDFSyntaxError as e:
+        error_msg = f"PDF file is corrupted or malformed: {file_path}"
+        logger.error(f"{error_msg} - {str(e)}")
+        raise FileReadError(error_msg)
+    except FileReadError:
+        raise  # Re-raise our custom errors
     except Exception as e:
-        raise ValueError(f"Error reading PDF: {str(e)}")
+        error_msg = f"Unexpected error reading PDF: {str(e)}"
+        logger.error(error_msg)
+        raise FileReadError(error_msg)
 
 
 def read_text_file(file_path: str) -> str:
     """
-    Read text from a plain text file
+    Read text from a plain text file with error handling
     
     Args:
         file_path: Path to the text file
@@ -267,13 +411,21 @@ def read_text_file(file_path: str) -> str:
         Cleaned text content
         
     Raises:
-        FileNotFoundError: If the file doesn't exist
-        ValueError: If the file cannot be read
+        FileReadError: If the file cannot be read
     """
     path = Path(file_path)
     
+    # Validate file exists
     if not path.exists():
-        raise FileNotFoundError(f"Text file not found: {file_path}")
+        error_msg = f"Text file not found: {file_path}"
+        logger.error(error_msg)
+        raise FileReadError(error_msg)
+    
+    # Check if file is empty
+    if path.stat().st_size == 0:
+        error_msg = f"Text file is empty: {file_path}"
+        logger.error(error_msg)
+        raise FileReadError(error_msg)
     
     try:
         # Try reading with UTF-8 first, fallback to other encodings
@@ -284,23 +436,32 @@ def read_text_file(file_path: str) -> str:
                 with open(file_path, 'r', encoding=encoding) as f:
                     text = f.read()
                 
-                if text.strip():
+                if text:  # File has content (even if just whitespace)
                     # Clean the text
                     cleaned_text = clean_text(text)
+                    logger.info(f"Successfully read text file ({len(cleaned_text)} characters) using {encoding} encoding")
                     return cleaned_text
                     
             except UnicodeDecodeError:
                 continue
         
-        raise ValueError(f"Could not decode text file with any supported encoding")
+        error_msg = f"Could not decode text file with any supported encoding: {file_path}"
+        logger.error(error_msg)
+        raise FileReadError(error_msg)
         
+    except FileReadError:
+        raise
     except Exception as e:
-        raise ValueError(f"Error reading text file: {str(e)}")
+        error_msg = f"Error reading text file: {str(e)}"
+        logger.error(error_msg)
+        raise FileReadError(error_msg)
+        raise FileReadError(error_msg)
 
 
 def read_document(file_path: str) -> str:
     """
-    Universal document reader - automatically detects and reads PDF or text files
+    Universal document reader with comprehensive error handling
+    Automatically detects and reads PDF or text files
     
     Args:
         file_path: Path to the document (PDF or text)
@@ -309,23 +470,36 @@ def read_document(file_path: str) -> str:
         Extracted and cleaned text
         
     Raises:
-        FileNotFoundError: If the file doesn't exist
-        ValueError: If the file type is unsupported or cannot be read
+        FileReadError: If the file cannot be read or type is unsupported
     """
-    path = Path(file_path)
-    
-    if not path.exists():
-        raise FileNotFoundError(f"File not found: {file_path}")
-    
-    # Determine file type and read accordingly
-    suffix = path.suffix.lower()
-    
-    if suffix == '.pdf':
-        return read_pdf(file_path)
-    elif suffix in ['.txt', '.text']:
-        return read_text_file(file_path)
-    else:
-        raise ValueError(f"Unsupported file type: {suffix}. Supported types: .pdf, .txt")
+    try:
+        path = Path(file_path)
+        
+        if not path.exists():
+            error_msg = f"File not found: {file_path}"
+            logger.error(error_msg)
+            raise FileReadError(error_msg)
+        
+        # Determine file type and read accordingly
+        suffix = path.suffix.lower()
+        
+        logger.info(f"Reading document: {file_path} (type: {suffix})")
+        
+        if suffix == '.pdf':
+            return read_pdf(file_path)
+        elif suffix in ['.txt', '.text']:
+            return read_text_file(file_path)
+        else:
+            error_msg = f"Unsupported file type: {suffix}. Supported types: .pdf, .txt"
+            logger.error(error_msg)
+            raise FileReadError(error_msg)
+            
+    except FileReadError:
+        raise
+    except Exception as e:
+        error_msg = f"Unexpected error reading document: {str(e)}"
+        logger.error(error_msg)
+        raise FileReadError(error_msg)
 
 
 # ============================================================================
@@ -405,18 +579,18 @@ def detect_sections(text: str) -> Dict[str, str]:
     return sections
 
 
-def extract_email(text: str) -> str:
+def extract_email(text: str) -> Optional[str]:
     """Extract email address from text"""
     email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
     match = re.search(email_pattern, text)
-    return match.group(0) if match else ""
+    return match.group(0) if match else None
 
 
-def extract_phone(text: str) -> str:
+def extract_phone(text: str) -> Optional[str]:
     """Extract phone number from text"""
     phone_pattern = r'(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}'
     match = re.search(phone_pattern, text)
-    return match.group(0) if match else ""
+    return match.group(0) if match else None
 
 
 def extract_name(text: str) -> str:
@@ -843,56 +1017,161 @@ def extract_extracurricular(text: str) -> List[str]:
     return activities[:10]  # Limit to top 10
 
 
-def parse_resume_to_model(file_path: str) -> Resume:
+def parse_resume_to_model(file_path: str, debug: bool = False) -> Resume:
     """
     Parse a resume file (PDF or text) and extract comprehensive structured information
     Returns a Resume model object with all sections
     
     Args:
         file_path: Path to the resume file (PDF or text)
+        debug: If True, save debug JSON output and enable detailed logging
         
     Returns:
         Resume model object with extracted data
+        
+    Raises:
+        FileReadError: If file cannot be read
+        ValidationError: If critical fields are missing or invalid
+        ParserError: For other parsing errors
     """
-    # Read the document
-    text = read_document(file_path)
-    
-    # Detect sections
-    sections = detect_sections(text)
-    
-    # Extract basic information from full text
-    name = extract_name(text)
-    email = extract_email(text)
-    phone = extract_phone(text)
-    
-    # Extract from detected sections (or use full text as fallback)
-    skills = extract_skills(sections.get('skills', text))
-    
-    experience = extract_experience(sections.get('experience', ''))
-    if not experience.roles:
-        # Set to 0 years for freshers
-        experience = Experience(years=0.0, roles=[])
-    
-    education = extract_education(sections.get('education', ''))
-    projects = extract_projects(sections.get('projects', ''))
-    achievements = extract_achievements(sections.get('achievements', ''))
-    extracurricular = extract_extracurricular(sections.get('extracurricular', ''))
-    
-    # Create and return Resume model
-    resume = Resume(
-        name=name or "Unknown",
-        email=email,
-        phone=phone,
-        skills=skills,
-        experience=experience,
-        education=education,
-        projects=projects,
-        achievements=achievements,
-        extracurricular=extracurricular,
-        raw_text=text
-    )
-    
-    return resume
+    try:
+        logging.info(f"Starting resume parsing for: {file_path}")
+        
+        # Read the document with error handling
+        try:
+            text = read_document(file_path)
+        except FileReadError as e:
+            logging.error(f"Failed to read resume file: {e}")
+            raise
+        
+        if not text or len(text.strip()) < 50:
+            raise ValidationError(f"Resume text too short ({len(text)} chars). Minimum 50 characters required.")
+        
+        # Detect sections
+        try:
+            sections = detect_sections(text)
+            logging.info(f"Detected sections: {list(sections.keys())}")
+        except Exception as e:
+            logging.warning(f"Section detection failed, using full text: {e}")
+            sections = {}
+        
+        # Extract basic information from full text with error handling
+        try:
+            name = extract_name(text)
+            if not name:
+                logging.warning("Name extraction returned empty, using 'Unknown'")
+                name = "Unknown"
+        except Exception as e:
+            logging.error(f"Name extraction failed: {e}")
+            name = "Unknown"
+        
+        try:
+            email = extract_email(text)
+            if not email:
+                logging.warning("Email not found in resume")
+        except Exception as e:
+            logging.warning(f"Email extraction failed: {e}")
+            email = None
+        
+        try:
+            phone = extract_phone(text)
+            if not phone:
+                logging.warning("Phone number not found in resume")
+        except Exception as e:
+            logging.warning(f"Phone extraction failed: {e}")
+            phone = None
+        
+        # Extract from detected sections (or use full text as fallback)
+        try:
+            skills = extract_skills(sections.get('skills', text))
+            if not skills:
+                logging.warning("No skills extracted from resume")
+                skills = []
+        except Exception as e:
+            logging.error(f"Skills extraction failed: {e}")
+            skills = []
+        
+        try:
+            experience = extract_experience(sections.get('experience', ''))
+            if not experience.roles:
+                # Set to 0 years for freshers
+                logging.info("No experience roles found, marking as fresher")
+                experience = Experience(years=0.0, roles=[])
+        except Exception as e:
+            logging.error(f"Experience extraction failed: {e}")
+            experience = Experience(years=0.0, roles=[])
+        
+        try:
+            education = extract_education(sections.get('education', ''))
+            if not education:
+                logging.warning("No education information extracted")
+        except Exception as e:
+            logging.error(f"Education extraction failed: {e}")
+            education = []
+        
+        try:
+            projects = extract_projects(sections.get('projects', ''))
+            if not projects:
+                logging.info("No projects found in resume")
+        except Exception as e:
+            logging.error(f"Projects extraction failed: {e}")
+            projects = []
+        
+        try:
+            achievements = extract_achievements(sections.get('achievements', ''))
+            if not achievements:
+                logging.info("No achievements found in resume")
+        except Exception as e:
+            logging.error(f"Achievements extraction failed: {e}")
+            achievements = []
+        
+        try:
+            extracurricular = extract_extracurricular(sections.get('extracurricular', ''))
+            if not extracurricular:
+                logging.info("No extracurricular activities found in resume")
+        except Exception as e:
+            logging.error(f"Extracurricular extraction failed: {e}")
+            extracurricular = []
+        
+        # Create Resume model
+        try:
+            resume = Resume(
+                name=name,
+                email=email,
+                phone=phone,
+                skills=skills,
+                experience=experience,
+                education=education,
+                projects=projects,
+                achievements=achievements,
+                extracurricular=extracurricular,
+                raw_text=text
+            )
+        except Exception as e:
+            logging.error(f"Failed to create Resume model: {e}")
+            raise ParserError(f"Resume model creation failed: {e}")
+        
+        # Validate the resume
+        validate_resume(resume)
+        
+        # Save debug output if requested
+        if debug:
+            try:
+                debug_file = save_debug_output(resume, file_path)
+                logging.info(f"Debug output saved to: {debug_file}")
+            except Exception as e:
+                logging.warning(f"Failed to save debug output: {e}")
+        
+        logging.info(f"Successfully parsed resume for: {name}")
+        return resume
+        
+    except (FileReadError, ValidationError, ParserError):
+        # Re-raise known exceptions
+        raise
+    except Exception as e:
+        # Catch any unexpected errors
+        logging.error(f"Unexpected error during resume parsing: {e}")
+        raise ParserError(f"Unexpected parsing error: {e}")
 
 
 # ============================================================================
