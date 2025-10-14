@@ -559,7 +559,7 @@ async def upload_jd(
     logger.info("📤 Received job description upload")
     
     try:
-        # Get JD text from file or form
+        print("This is running 1")
         if file and file.filename:
             logger.info(f"📄 Processing JD file: {file.filename}")
             
@@ -678,7 +678,7 @@ async def match_candidates(
             resume = db.get_resume_by_id(candidate_id)
             if resume:
                 candidates_data.append({
-                    "resume_id": candidate_id,
+                    "candidate_id": candidate_id,
                     "resume_data": resume
                 })
                 logger.info(f"  ✓ Loaded candidate: {candidate_id}")
@@ -699,6 +699,7 @@ async def match_candidates(
         
         # Run batch scoring
         logger.info("🚀 Starting batch scoring with GPT-4o...")
+        print("Batch gpt call in function has started.")
         scored_results = score_batch(candidates_data, jd_text, jd_requirements)
         
         logger.info(f"✓ Scoring complete: {len(scored_results)} results")
@@ -706,21 +707,20 @@ async def match_candidates(
         # Store results in database
         logger.info("💾 Saving match results to database...")
         for result in scored_results:
-            candidate_id = result["resume_id"]
+            candidate_id = result["candidate_id"]
             match_data = {
                 "jd_id": jd_id,
                 "timestamp": datetime.now().isoformat(),
-                "scores": result["scores"],
-                "shortlisted": result["shortlisted"],
+                "scores": {
+                    "overall": result.get("overall_score"),
+                    **(result.get("sub_scores") or {})
+                },
+                "shortlisted": result.get("shortlisted", False),
                 "feedback": result.get("feedback", ""),
                 "strengths": result.get("strengths", []),
-                "improvement_areas": result.get("improvement_areas", [])
+                "improvement_areas": result.get("gaps", [])
             }
-            
-            # Update candidate's match_history
             db.update_match_results(candidate_id, jd_id, match_data)
-            
-            # Also save to match_results collection
             db.save_match_result(candidate_id, jd_id, match_data)
         
         logger.info(f"✓ Saved {len(scored_results)} match results")
@@ -728,30 +728,31 @@ async def match_candidates(
         # Format response
         matched_candidates = []
         for result in scored_results:
+            scores = {
+                "overall": result.get("overall_score"),
+                **(result.get("sub_scores") or {})
+            }
             matched_candidates.append(MatchResult(
-                id=result["resume_id"],
-                overall=result["scores"]["overall"],
-                justifications=result["scores"],
+                id=result["candidate_id"],
+                overall=scores["overall"],
+                justifications=scores,
                 feedback=result.get("feedback", ""),
                 strengths=result.get("strengths", []),
-                improvement_areas=result.get("improvement_areas", [])
+                improvement_areas=result.get("gaps", [])
             ))
         
         logger.info("="*80)
         logger.info(f"✅ Matching complete: {len(matched_candidates)} candidates ranked")
-        logger.info(f"📊 Top score: {scored_results[0]['scores']['overall']:.2f}")
+        logger.info(f"📊 Top score: {scored_results[0].get('overall_score', 0):.2f}")
         logger.info("="*80)
-        
         return MatchResponse(
             jd_id=jd_id,
             matched_candidates=matched_candidates,
             total_candidates=len(matched_candidates),
             message=f"Successfully matched {len(matched_candidates)} candidates. Results saved to database."
         )
-        
     except HTTPException:
         raise
-    
     except Exception as e:
         logger.error(f"❌ Error during matching: {e}")
         import traceback
@@ -800,41 +801,71 @@ async def get_shortlist(
             "min_skills_score": min_skills_score
         }
         
+        logger.info(f"Raw match results: {all_matches}")
         for match in all_matches:
-            candidate_id = match.get("candidate_id")
-            match_data = match.get("match_data", {})
-            scores = match_data.get("scores", {})
-            overall_score = scores.get("overall", 0)
+            candidate_id = match.get("candidate_id") or match.get("resume_id")
             
+            # Skip if no candidate_id found
+            if not candidate_id:
+                logger.warning(f"Skipping match with missing candidate_id: {match}")
+                continue
+                
+            match_data = match.get("match_data", {})
+            # Robustly extract scores
+            scores = match_data.get("scores")
+            if not scores:
+                # Try to reconstruct from sub_scores and overall
+                sub_scores = match_data.get("sub_scores", {})
+                scores = {
+                    "overall": match_data.get("overall", 0),
+                    "skills": sub_scores.get("skills", 0),
+                    "experience": sub_scores.get("experience", 0),
+                    "education_projects": sub_scores.get("education_projects", 0),
+                    "extracurricular": sub_scores.get("extracurricular", 0),
+                    "achievements": sub_scores.get("achievements", 0),
+                }
+            overall_score = scores.get("overall", 0)
+            logger.info(f"Evaluating candidate_id={candidate_id}, overall_score={overall_score}, scores={scores}")
             # Apply threshold filter
             if overall_score < threshold:
+                logger.info(f"Candidate {candidate_id} filtered out by threshold {threshold}")
                 continue
-            
             # Fetch candidate details for additional filters
             if min_experience is not None or min_skills_score is not None:
                 candidate = db.get_resume_by_id(candidate_id)
                 if not candidate:
+                    logger.info(f"Candidate {candidate_id} not found in DB for experience/skills filter")
                     continue
+                
+                # Extract from resume_data field if it exists
+                resume_data = candidate.get("resume_data", {})
                 
                 # Apply experience filter
                 if min_experience is not None:
-                    exp_years = candidate.get("experience", {}).get("years", 0)
+                    exp_years = resume_data.get("experience", {}).get("years", 0)
                     if exp_years < min_experience:
+                        logger.info(f"Candidate {candidate_id} filtered out by min_experience {min_experience}")
                         continue
                 
                 # Apply skills score filter
                 if min_skills_score is not None:
                     skills_score = scores.get("skills", 0)
                     if skills_score < min_skills_score:
+                        logger.info(f"Candidate {candidate_id} filtered out by min_skills_score {min_skills_score}")
                         continue
                 
-                candidate_name = candidate.get("name", "Unknown")
+                candidate_name = resume_data.get("name", candidate.get("name", "Unknown"))
             else:
                 # Just fetch name without full validation
                 candidate = db.get_resume_by_id(candidate_id)
-                candidate_name = candidate.get("name", "Unknown") if candidate else "Unknown"
+                if candidate:
+                    # Extract from resume_data field if it exists
+                    resume_data = candidate.get("resume_data", {})
+                    candidate_name = resume_data.get("name", candidate.get("name", "Unknown"))
+                else:
+                    candidate_name = "Unknown"
             
-            # Add to filtered list
+            logger.info(f"Candidate {candidate_id} PASSED all filters, adding to shortlist")
             filtered_candidates.append({
                 "candidate_id": candidate_id,
                 "name": candidate_name,
@@ -844,10 +875,20 @@ async def get_shortlist(
                 "education_projects_score": scores.get("education_projects", 0),
                 "achievements_score": scores.get("achievements", 0),
                 "extracurricular_score": scores.get("extracurricular", 0),
+                "sub_scores": {
+                    "skills_score": scores.get("skills", 0),
+                    "experience_score": scores.get("experience", 0),
+                    "education_score": scores.get("education_projects", 0),
+                    "cultural_fit_score": scores.get("extracurricular", 0),
+                    "achievements_score": scores.get("achievements", 0)
+                },
+                "justification": match_data.get("feedback", ""),
                 "feedback": match_data.get("feedback", ""),
                 "strengths": match_data.get("strengths", []),
                 "improvement_areas": match_data.get("improvement_areas", []),
-                "matched_at": match_data.get("timestamp", "")
+                "matched_at": match_data.get("timestamp", ""),
+                "resume_id": candidate_id,
+                "match_id": f"{jd_id}_{candidate_id}"
             })
         
         logger.info(f"✓ After filtering: {len(filtered_candidates)} candidates")
@@ -926,7 +967,13 @@ async def export_shortlist_csv(
         filtered_candidates = []
         
         for match in all_matches:
-            candidate_id = match.get("candidate_id")
+            candidate_id = match.get("candidate_id") or match.get("resume_id")
+            
+            # Skip if no candidate_id found
+            if not candidate_id:
+                logger.warning(f"Skipping match with missing candidate_id in CSV export: {match}")
+                continue
+                
             match_data = match.get("match_data", {})
             scores = match_data.get("scores", {})
             overall_score = scores.get("overall", 0)
@@ -940,9 +987,12 @@ async def export_shortlist_csv(
             if not candidate:
                 continue
             
+            # Extract from resume_data field if it exists
+            resume_data = candidate.get("resume_data", {})
+            
             # Apply experience filter
             if min_experience is not None:
-                exp_years = candidate.get("experience", {}).get("years", 0)
+                exp_years = resume_data.get("experience", {}).get("years", 0)
                 if exp_years < min_experience:
                     continue
             
@@ -955,17 +1005,17 @@ async def export_shortlist_csv(
             # Add to filtered list
             filtered_candidates.append({
                 "candidate_id": candidate_id,
-                "name": candidate.get("name", "Unknown"),
-                "email": candidate.get("email", "N/A"),
-                "phone": candidate.get("phone", "N/A"),
+                "name": resume_data.get("name", candidate.get("name", "Unknown")),
+                "email": resume_data.get("email", candidate.get("email", "N/A")),
+                "phone": resume_data.get("phone", candidate.get("phone", "N/A")),
                 "overall_score": overall_score,
                 "skills_score": scores.get("skills", 0),
                 "experience_score": scores.get("experience", 0),
                 "education_projects_score": scores.get("education_projects", 0),
                 "achievements_score": scores.get("achievements", 0),
                 "extracurricular_score": scores.get("extracurricular", 0),
-                "experience_years": candidate.get("experience", {}).get("years", 0),
-                "skills": ", ".join(candidate.get("skills", [])[:10]),
+                "experience_years": resume_data.get("experience", {}).get("years", 0),
+                "skills": ", ".join(resume_data.get("skills", [])[:10]),
                 "feedback": match_data.get("feedback", ""),
                 "strengths": " | ".join(match_data.get("strengths", [])[:5]),
                 "improvement_areas": " | ".join(match_data.get("improvement_areas", [])[:5]),
@@ -1140,6 +1190,8 @@ BE THOROUGH: Look for both obvious and subtle indicators. If no biases detected,
             max_tokens=1500,
             response_format={"type": "json_object"}
         )
+        
+        print("This is response from gpt" , response)
         
         # Parse response
         import json

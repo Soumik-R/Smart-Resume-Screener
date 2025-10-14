@@ -23,6 +23,15 @@ ChartJS.register(
 const ScoreRadar = ({ subScores, candidateId }) => {
   const chartRef = useRef(null);
 
+  // Ensure subScores is defined with fallback values
+  const safeSubScores = subScores || {
+    skills_score: 0,
+    experience_score: 0,
+    education_score: 0,
+    cultural_fit_score: 0,
+    achievements_score: 0
+  };
+
   // Prepare chart data
   const data = {
     labels: [
@@ -36,11 +45,11 @@ const ScoreRadar = ({ subScores, candidateId }) => {
       {
         label: candidateId || 'Candidate Score',
         data: [
-          subScores.skills_score || 0,
-          subScores.experience_score || 0,
-          subScores.education_score || 0,
-          subScores.cultural_fit_score || 0,
-          subScores.achievements_score || 0
+          safeSubScores.skills_score || 0,
+          safeSubScores.experience_score || 0,
+          safeSubScores.education_score || 0,
+          safeSubScores.cultural_fit_score || 0,
+          safeSubScores.achievements_score || 0
         ],
         backgroundColor: 'rgba(0, 0, 128, 0.2)', // Navy tint
         borderColor: 'rgba(0, 0, 128, 0.8)', // Navy border

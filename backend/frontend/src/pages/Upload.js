@@ -90,13 +90,8 @@ const UploadPage = () => {
       return false;
     }
     
-    if (jdText.trim().length < 50) {
-      message.error('Job description must be at least 50 characters');
-      return false;
-    }
-    
-    if (jdText.trim().length > 50000) {
-      message.error('Job description must not exceed 50,000 characters');
+    if (jdText.trim().length < 20) {
+      message.error('Job description must be at least 20 characters');
       return false;
     }
     
@@ -105,60 +100,91 @@ const UploadPage = () => {
       return false;
     }
     
-    if (files.length > 50) {
-      message.error('Maximum 50 resumes allowed per batch');
-      return false;
-    }
-    
     return true;
   };
 
-  // Handle form submission
-  const handleSubmit = async () => {
-    if (!validateForm()) return;
+  // Handle upload only
+  const handleUpload = async () => {
+    console.log('handleUpload started');
+    if (!validateForm()) {
+      console.log('handleUpload ended (validation failed)');
+      return;
+    }
     
     setLoading(true);
     setUploadProgress('Uploading job description...');
     
     try {
       // Step 1: Upload Job Description
+      console.log('📤 Starting JD upload...');
+      console.log('JD Text length:', jdText.length);
+      console.log('JD Text preview:', jdText.substring(0, 100));
       const jdResponse = await uploadJD(jdText);
+      console.log('✅ JD Upload response:', jdResponse);
       const uploadedJdId = jdResponse.jd_id;
       setJdId(uploadedJdId);
-      
       // Step 2: Upload all resumes
       setUploadProgress(`Uploading resumes (0/${files.length})...`);
       const resumeIds = [];
-      
       for (let i = 0; i < files.length; i++) {
         const formData = new FormData();
         formData.append('file', files[i].file);
-        
         setUploadProgress(`Uploading resumes (${i + 1}/${files.length})...`);
         const resumeResponse = await uploadResume(formData);
-        resumeIds.push(resumeResponse.resume_id);
+        console.log(`📄 Resume ${i + 1} uploaded:`, resumeResponse);
+        // Backend returns 'candidate_id' not 'resume_id'
+        const candidateId = resumeResponse.candidate_id;
+        console.log(`  ✓ Candidate ID: ${candidateId}`);
+        resumeIds.push(candidateId);
       }
-      
-      // Step 3: Trigger matching
-      setUploadProgress('Matching resumes with job description...');
-      const matchResponse = await matchResumes(uploadedJdId, resumeIds);
-      
-      // Success!
-      setSuccessData({
-        jdId: uploadedJdId,
-        totalResumes: files.length,
-        matchedCount: matchResponse.results?.length || files.length
-      });
-      
-      setUploadProgress('');
-      message.success('All resumes matched successfully!');
-      
+      console.log('📊 All resume IDs collected:', resumeIds);
+      setUploadProgress('Upload complete. Ready to match.');
+      message.success('Upload complete. Now click Match to proceed.');
+      setLoading(false);
+      // Store resumeIds for matching
+      window._uploadedResumeIds = resumeIds;
+      window._uploadedJdId = uploadedJdId;
     } catch (error) {
       setUploadProgress('');
       setLoading(false);
-      console.error('Upload/Match error:', error);
-      // Error notification already handled by API interceptor
+      console.error('Upload error:', error);
     }
+    console.log('handleUpload ended');
+  };
+
+  // Handle match only
+  const handleMatch = async () => {
+    console.log('handleMatch started');
+    setLoading(true);
+    setUploadProgress('Matching resumes with job description...');
+    try {
+      // Use stored IDs if available
+      const uploadedJdId = window._uploadedJdId || jdId;
+      const resumeIds = window._uploadedResumeIds || [];
+      if (!uploadedJdId || !resumeIds.length) {
+        message.error('Please upload job description and resumes first.');
+        setLoading(false);
+        setUploadProgress('');
+        console.log('handleMatch ended (missing data)');
+        return;
+      }
+      console.log('🎯 Starting matching with JD:', uploadedJdId);
+      const matchResponse = await matchResumes(uploadedJdId, resumeIds);
+      console.log('✅ Matching complete:', matchResponse);
+      setSuccessData({
+        jdId: uploadedJdId,
+        totalResumes: resumeIds.length,
+        matchedCount: matchResponse.results?.length || resumeIds.length
+      });
+      setUploadProgress('');
+      message.success('All resumes matched successfully!');
+    } catch (error) {
+      setUploadProgress('');
+      setLoading(false);
+      console.error('Match error:', error);
+    }
+    setLoading(false);
+    console.log('handleMatch ended');
   };
 
   // Reset form
@@ -171,9 +197,15 @@ const UploadPage = () => {
     setJdId(null);
   };
 
-  // Navigate to dashboard
+  // Navigate to dashboard with correct JD ID
   const handleViewShortlist = () => {
-    navigate(`/dashboard/${jdId}`);
+    // Prefer successData.jdId, fallback to window._uploadedJdId, then jdId
+    const targetJdId = (successData && successData.jdId) || window._uploadedJdId || jdId;
+    if (!targetJdId) {
+      message.error('No Job Description ID found. Please upload and match again.');
+      return;
+    }
+    navigate(`/dashboard/${targetJdId}`);
   };
 
   // If successful, show success view
@@ -351,7 +383,7 @@ const UploadPage = () => {
                 type="primary"
                 size="large"
                 icon={<UploadOutlined />}
-                onClick={handleSubmit}
+                onClick={handleUpload}
                 disabled={!jdText.trim() || files.length === 0}
                 style={{
                   height: '50px',
@@ -361,7 +393,24 @@ const UploadPage = () => {
                   paddingRight: '40px'
                 }}
               >
-                Upload & Match
+                Upload
+              </Button>
+              <Button
+                type="primary"
+                size="large"
+                onClick={handleMatch}
+                disabled={(!window._uploadedResumeIds || !window._uploadedResumeIds.length) && (!jdId || !files.length)}
+                style={{
+                  height: '50px',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  paddingLeft: '40px',
+                  paddingRight: '40px',
+                  background: '#0015ff',
+                  borderColor: '#0015ff'
+                }}
+              >
+                Match
               </Button>
               <Button
                 size="large"

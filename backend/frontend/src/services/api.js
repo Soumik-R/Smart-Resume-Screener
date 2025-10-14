@@ -29,6 +29,11 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
+    // Log full error for debugging
+    console.error('🚨 API Error intercepted:', error);
+    console.error('Error response data:', error.response?.data);
+    console.error('Error response status:', error.response?.status);
+    
     // Handle different error scenarios
     let errorMessage = 'An unexpected error occurred';
     let errorDescription = '';
@@ -42,6 +47,11 @@ api.interceptors.response.use(
         case 400:
           errorMessage = 'Bad Request';
           errorDescription = data.detail || 'Invalid request parameters';
+          // Log details array if present
+          if (data.details) {
+            console.error('Validation details:', JSON.stringify(data.details, null, 2));
+            errorDescription += '\n' + data.details.map(d => `${d.field}: ${d.message}`).join('\n');
+          }
           break;
         case 404:
           errorMessage = 'Not Found';
@@ -51,11 +61,15 @@ api.interceptors.response.use(
           errorMessage = 'Validation Error';
           // Handle Pydantic validation errors
           if (data.detail && Array.isArray(data.detail)) {
+            console.error('Pydantic validation errors:', JSON.stringify(data.detail, null, 2));
             errorDescription = data.detail.map(err => 
               `${err.loc.join('.')}: ${err.msg}`
             ).join(', ');
+          } else if (data.details && Array.isArray(data.details)) {
+            console.error('Custom validation details:', JSON.stringify(data.details, null, 2));
+            errorDescription = data.details.map(d => `${d.field}: ${d.message}`).join(', ');
           } else {
-            errorDescription = data.detail || 'Invalid input data';
+            errorDescription = data.detail || data.message || 'Invalid input data';
           }
           break;
         case 500:
@@ -105,11 +119,19 @@ api.interceptors.response.use(
  */
 export const uploadResume = async (formData) => {
   try {
+    console.log('📤 uploadResume called');
+    console.log('FormData entries:');
+    for (let pair of formData.entries()) {
+      console.log(`  ${pair[0]}:`, pair[1]);
+    }
+    
     const response = await api.post('/upload_resume', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
     });
+    
+    console.log('✅ Resume upload response:', response.data);
     
     notification.success({
       message: 'Resume Uploaded',
@@ -120,6 +142,8 @@ export const uploadResume = async (formData) => {
     
     return response.data;
   } catch (error) {
+    console.error('❌ uploadResume error:', error);
+    console.error('Error response:', error.response?.data);
     throw error;
   }
 };
@@ -131,7 +155,22 @@ export const uploadResume = async (formData) => {
  */
 export const uploadJD = async (text) => {
   try {
-    const response = await api.post('/upload_jd', { text });
+    console.log('🚀 uploadJD called with text length:', text.length);
+    console.log('📝 Text preview:', text.substring(0, 100));
+    
+    // Backend expects FormData with jd_text field, not JSON
+    const formData = new FormData();
+    formData.append('jd_text', text);
+    
+    console.log('📦 FormData created, sending to /upload_jd...');
+    
+    const response = await api.post('/upload_jd', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    
+    console.log('✅ Response received:', response.data);
     
     notification.success({
       message: 'Job Description Uploaded',
@@ -142,6 +181,8 @@ export const uploadJD = async (text) => {
     
     return response.data;
   } catch (error) {
+    console.error('❌ uploadJD error:', error);
+    console.error('Error response:', error.response?.data);
     throw error;
   }
 };
@@ -154,7 +195,15 @@ export const uploadJD = async (text) => {
  */
 export const matchResumes = async (jdId, resumeIds) => {
   try {
-    const response = await api.post(`/match/${jdId}`, { resume_ids: resumeIds });
+    console.log('🎯 matchResumes called');
+    console.log('JD ID:', jdId);
+    console.log('Resume IDs:', resumeIds);
+    console.log('Number of resumes:', resumeIds.length);
+    
+    // Backend expects 'candidate_ids' not 'resume_ids'
+    const response = await api.post(`/match/${jdId}`, { candidate_ids: resumeIds });
+    
+    console.log('✅ Match response:', response.data);
     
     notification.success({
       message: 'Matching Complete',
@@ -165,6 +214,8 @@ export const matchResumes = async (jdId, resumeIds) => {
     
     return response.data;
   } catch (error) {
+    console.error('❌ matchResumes error:', error);
+    console.error('Error response:', error.response?.data);
     throw error;
   }
 };
