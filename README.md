@@ -1,5 +1,13 @@
 # Smart Resume Screener
 
+## 🎥 Demo Video
+
+[![Smart Resume Screener Demo](https://img.youtube.com/vi/vUQOPO8X7_8/maxresdefault.jpg)](https://youtu.be/vUQOPO8X7_8?si=7l-7bq3A7xPBWAX_)
+
+**[▶️ Watch the full demo on YouTube](https://youtu.be/vUQOPO8X7_8?si=7l-7bq3A7xPBWAX_)**
+
+---
+
 An intelligent resume screening and matching system powered by GPT-4o that automates candidate evaluation by extracting structured information from resumes and computing comprehensive fit scores against job descriptions.
 
 ## Table of Contents
