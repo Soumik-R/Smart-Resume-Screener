@@ -1,10 +1,31 @@
 /* Dashboard Page Styles */
 
 .dashboard-container {
-  min-height: 100vh;
+  min-height: calc(100vh - 64px - 120px);
   padding: 40px 20px;
   max-width: 1600px;
   margin: 0 auto;
+}
+
+/* Dark Mode Dashboard Styles */
+body.dark-mode .dashboard-container {
+  background: transparent;
+}
+
+body.dark-mode .stat-card,
+body.dark-mode .filter-card,
+body.dark-mode .table-card {
+  background-color: #16213e;
+  border-color: #0f3460;
+}
+
+body.dark-mode .expanded-row {
+  background: #0f3460;
+}
+
+body.dark-mode .radar-card {
+  background-color: #16213e;
+  border-color: #0f3460;
 }
 
 /* Statistics Cards */

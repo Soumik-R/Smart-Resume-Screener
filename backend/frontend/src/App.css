@@ -20,5 +20,111 @@ html {
 body {
   margin: 0;
   padding: 0;
+  transition: background-color 0.3s ease;
 }
+
+/* App Layout */
+.app-layout {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-layout.light-mode {
+  background: #ADD8E6;
+}
+
+.app-layout.dark-mode {
+  background: #1a1a2e;
+}
+
+/* Content Area */
+.app-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 64px - 120px); /* viewport - header - footer */
+  padding: 0;
+  background: transparent;
+}
+
+/* Dark Mode Styles */
+body.dark-mode {
+  background-color: #1a1a2e;
+  color: #ffffff;
+}
+
+body.dark-mode .card,
+body.dark-mode .ant-card {
+  background-color: #16213e;
+  border-color: #0f3460;
+  color: #ffffff;
+}
+
+body.dark-mode .ant-card-head {
+  background-color: #0f3460;
+  border-bottom-color: #1a1a2e;
+  color: #ffffff;
+}
+
+body.dark-mode .ant-table {
+  background-color: #16213e;
+  color: #ffffff;
+}
+
+body.dark-mode .ant-table-thead > tr > th {
+  background-color: #0f3460;
+  color: #ffffff;
+  border-bottom-color: #1a1a2e;
+}
+
+body.dark-mode .ant-table-tbody > tr {
+  background-color: #16213e;
+  color: #ffffff;
+}
+
+body.dark-mode .ant-table-tbody > tr:hover > td {
+  background-color: #1a2332 !important;
+}
+
+body.dark-mode .ant-input,
+body.dark-mode .ant-input-number,
+body.dark-mode .ant-select-selector {
+  background-color: #0f3460 !important;
+  color: #ffffff !important;
+  border-color: #1a1a2e !important;
+}
+
+body.dark-mode .ant-modal-content {
+  background-color: #16213e;
+  color: #ffffff;
+}
+
+body.dark-mode .ant-modal-header {
+  background-color: #0f3460;
+  border-bottom-color: #1a1a2e;
+}
+
+body.dark-mode .ant-typography {
+  color: #ffffff;
+}
+
+body.dark-mode .dropzone {
+  background-color: #0f3460;
+  border-color: #1890ff;
+  color: #ffffff;
+}
+
+body.dark-mode .dropzone:hover {
+  background-color: #1a2332;
+  border-color: #40a9ff;
+}
+
+/* Responsive Layout */
+@media (max-width: 768px) {
+  .app-content {
+    min-height: calc(100vh - 64px - 200px);
+  }
+}
+
 

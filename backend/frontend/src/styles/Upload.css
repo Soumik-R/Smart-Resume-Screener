@@ -1,7 +1,7 @@
 /* Upload Page Styles */
 
 .upload-container {
-  min-height: 100vh;
+  min-height: calc(100vh - 64px - 120px);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -12,6 +12,26 @@
   max-width: 900px;
   width: 100%;
   margin: 0 auto;
+}
+
+/* Dark Mode Upload Styles */
+body.dark-mode .upload-container {
+  background: transparent;
+}
+
+body.dark-mode .upload-card {
+  background-color: #16213e;
+  border-color: #0f3460;
+}
+
+body.dark-mode .ant-card-head {
+  background-color: #0f3460;
+  border-bottom-color: #1a1a2e;
+}
+
+body.dark-mode .dropzone-icon,
+body.dark-mode .dropzone-text {
+  color: #40a9ff;
 }
 
 .form-section {
