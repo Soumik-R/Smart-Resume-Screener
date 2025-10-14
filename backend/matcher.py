@@ -728,28 +728,237 @@ def calculate_match_score(resume_data: Dict[str, Any], jd_data: Dict[str, Any]) 
     }
 
 
+def extract_jd_requirements(jd_text: str) -> Dict[str, Any]:
+    """
+    Extract key requirements from job description using regex patterns
+    Falls back to simple parsing if complex extraction fails
+    
+    Args:
+        jd_text: Raw job description text
+        
+    Returns:
+        Dictionary with extracted requirements:
+            - required_skills: List of required skills
+            - experience_years: Required years of experience
+            - education: Required education level
+            - responsibilities: List of key responsibilities
+    """
+    import re
+    
+    result = {
+        'required_skills': [],
+        'experience_years': None,
+        'education': None,
+        'responsibilities': []
+    }
+    
+    # Extract required skills section
+    skills_pattern = r'(?:required skills|skills required|requirements|qualifications|must have)[:\s]*([^\n]+(?:\n[-•*]\s*[^\n]+)*)'
+    skills_match = re.search(skills_pattern, jd_text, re.IGNORECASE)
+    
+    if skills_match:
+        skills_text = skills_match.group(1)
+        # Split by common delimiters
+        skills = re.split(r'[,;•\n-]', skills_text)
+        result['required_skills'] = [s.strip() for s in skills if s.strip() and len(s.strip()) > 2][:15]
+    
+    # Extract experience years
+    exp_pattern = r'(\d+)[\s\-+]*(?:years?|yrs?).*?(?:experience|exp)'
+    exp_match = re.search(exp_pattern, jd_text, re.IGNORECASE)
+    if exp_match:
+        result['experience_years'] = int(exp_match.group(1))
+    
+    # Extract education
+    edu_keywords = ['bachelor', 'master', 'phd', 'degree', 'diploma', 'certification']
+    for keyword in edu_keywords:
+        if keyword in jd_text.lower():
+            result['education'] = keyword.title()
+            break
+    
+    # Extract responsibilities section
+    resp_pattern = r'(?:responsibilities|duties|what you[\'\'\\s]ll do)[:\s]*([^\n]+(?:\n[-•*]\s*[^\n]+)*)'
+    resp_match = re.search(resp_pattern, jd_text, re.IGNORECASE)
+    
+    if resp_match:
+        resp_text = resp_match.group(1)
+        responsibilities = re.split(r'\n[-•*]\s*', resp_text)
+        result['responsibilities'] = [r.strip() for r in responsibilities if r.strip() and len(r.strip()) > 5][:10]
+    
+    logger.info(f"Extracted JD requirements: {len(result['required_skills'])} skills, {result['experience_years']} years exp")
+    
+    return result
+
+
+def score_batch(
+    resumes_list: List[Dict[str, Any]],
+    jd_text: str,
+    weights: Optional[Dict[str, float]] = None,
+    role_context: str = "general",
+    include_metadata: bool = True
+) -> List[Dict[str, Any]]:
+    """
+    Score multiple resumes against a job description in batch
+    
+    Args:
+        resumes_list: List of resume dictionaries (from Resume model or dicts)
+        jd_text: Job description text
+        weights: Optional custom scoring weights
+        role_context: Role level context ("junior", "senior", "mid-level", "general")
+        include_metadata: Include original resume data in results
+        
+    Returns:
+        List of scored candidates, sorted by overall score (highest first)
+        Each result contains:
+            - candidate_id: Index or name of candidate
+            - overall_score: Overall match score (1-10)
+            - sub_scores: Category scores
+            - shortlisted: Boolean flag
+            - justifications: Explanations per category
+            - feedback: Improvement suggestions
+            - strengths: Key strengths
+            - gaps: Critical gaps
+            - transferable_skills: Identified transferable skills
+            - hiring_recommendation: Fit level
+            - rank: Position in sorted list (1 = best)
+            - original_resume: Original resume data (if include_metadata=True)
+    """
+    import json
+    
+    logger.info(f"Starting batch scoring for {len(resumes_list)} candidates")
+    
+    # Extract JD requirements for better context
+    jd_requirements = extract_jd_requirements(jd_text)
+    logger.info(f"JD Requirements extracted: {jd_requirements['required_skills'][:5]}...")
+    
+    # Enhance JD text with extracted requirements
+    enhanced_jd = jd_text
+    if jd_requirements['required_skills']:
+        enhanced_jd += f"\n\nKey Required Skills: {', '.join(jd_requirements['required_skills'][:10])}"
+    
+    results = []
+    
+    for idx, resume_data in enumerate(resumes_list):
+        try:
+            # Get candidate identifier
+            candidate_id = resume_data.get('name', f'Candidate_{idx+1}')
+            logger.info(f"Scoring candidate {idx+1}/{len(resumes_list)}: {candidate_id}")
+            
+            # Convert to JSON string
+            resume_json = json.dumps(resume_data, default=str)
+            
+            # Call matching function
+            match_result = match_resume_to_jd(
+                resume_json=resume_json,
+                jd_text=enhanced_jd,
+                weights=weights,
+                role_context=role_context
+            )
+            
+            # Build result dictionary
+            result = {
+                'candidate_id': candidate_id,
+                'overall_score': match_result['overall'],
+                'sub_scores': match_result['sub_scores'],
+                'shortlisted': match_result['shortlisted'],
+                'justifications': match_result['justifications'],
+                'feedback': match_result['feedback'],
+                'strengths': match_result['strengths'],
+                'gaps': match_result['gaps'],
+                'transferable_skills': match_result['transferable_skills'],
+                'hiring_recommendation': match_result['hiring_recommendation']
+            }
+            
+            # Add metadata if requested
+            if include_metadata:
+                result['original_resume'] = {
+                    'name': resume_data.get('name', 'Unknown'),
+                    'email': resume_data.get('email'),
+                    'phone': resume_data.get('phone'),
+                    'skills': resume_data.get('skills', []),
+                    'experience_years': resume_data.get('experience', {}).get('years', 0)
+                }
+            
+            results.append(result)
+            logger.info(f"Scored {candidate_id}: {match_result['overall']:.1f}/10 - {match_result['hiring_recommendation']}")
+            
+        except Exception as e:
+            logger.error(f"Error scoring candidate {idx+1}: {e}")
+            # Add failed result with error info
+            results.append({
+                'candidate_id': resume_data.get('name', f'Candidate_{idx+1}'),
+                'overall_score': 0.0,
+                'error': str(e),
+                'shortlisted': False
+            })
+            continue
+    
+    # Sort by overall score (descending)
+    results.sort(key=lambda x: x.get('overall_score', 0), reverse=True)
+    
+    # Add ranking
+    for rank, result in enumerate(results, 1):
+        result['rank'] = rank
+    
+    logger.info(f"Batch scoring complete. Top candidate: {results[0]['candidate_id']} ({results[0]['overall_score']:.1f}/10)")
+    
+    return results
+
+
+def get_shortlisted_candidates(
+    batch_results: List[Dict[str, Any]],
+    min_score: float = 7.0
+) -> List[Dict[str, Any]]:
+    """
+    Filter batch results to get only shortlisted candidates
+    
+    Args:
+        batch_results: Results from score_batch()
+        min_score: Minimum score threshold (default 7.0)
+        
+    Returns:
+        Filtered list of candidates with score >= min_score
+    """
+    shortlisted = [
+        result for result in batch_results
+        if result.get('overall_score', 0) >= min_score
+    ]
+    
+    logger.info(f"Shortlisted {len(shortlisted)}/{len(batch_results)} candidates (score >= {min_score})")
+    
+    return shortlisted
+
+
 def batch_score_candidates(resumes: List[Dict[str, Any]], jd_data: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
-    Score multiple candidates against a job description
+    Legacy function - wraps score_batch for backward compatibility
     
     Args:
         resumes: List of parsed resume data
-        jd_data: Parsed job description data
+        jd_data: Parsed job description data (dict with 'text' or 'raw_text' field)
         
     Returns:
         List of scored candidates, sorted by match score (highest first)
     """
-    scored_candidates = []
+    import json
     
-    for resume in resumes:
-        try:
-            result = calculate_match_score(resume, jd_data)
-            scored_candidates.append(result)
-        except Exception as e:
-            print(f"Error scoring candidate {resume.get('name', 'Unknown')}: {str(e)}")
-            continue
+    # Extract JD text
+    jd_text = jd_data.get('text') or jd_data.get('raw_text') or str(jd_data)
     
-    # Sort by match score (descending)
-    scored_candidates.sort(key=lambda x: x.get('match_score', 0), reverse=True)
+    # Call new batch function
+    results = score_batch(resumes, jd_text)
     
-    return scored_candidates
+    # Convert to legacy format
+    legacy_results = []
+    for result in results:
+        if 'error' not in result:
+            legacy_results.append({
+                'candidate_name': result['candidate_id'],
+                'match_score': result['overall_score'] * 10,  # Convert to 0-100 scale
+                'overall_score': result['overall_score'],
+                'sub_scores': result['sub_scores'],
+                'shortlisted': result['shortlisted'],
+                'rank': result['rank'],
+                'analysis': json.dumps(result, indent=2)
+            })
+    
+    return legacy_results
