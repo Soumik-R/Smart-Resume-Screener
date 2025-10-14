@@ -11,10 +11,11 @@ from typing import Optional, List
 from io import BytesIO, StringIO
 from tempfile import NamedTemporaryFile
 
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
-from pydantic import BaseModel
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, Field, validator, ValidationError
 from dotenv import load_dotenv
 import openai
 
@@ -24,6 +25,12 @@ from matcher import extract_jd_requirements, match_resume_to_jd, score_batch
 
 # Load environment variables
 load_dotenv()
+
+# Configuration constants
+MAX_FILE_SIZE_MB = 5
+MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+ALLOWED_EXTENSIONS = ['pdf', 'txt', 'text']
+API_KEY_HEADER = "X-API-Key"
 
 # Configure logging
 logging.basicConfig(
@@ -59,6 +66,72 @@ logger.info("🚀 Smart Resume Screener API initialized")
 
 
 # ============================================================================
+# GLOBAL EXCEPTION HANDLERS
+# ============================================================================
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle Pydantic validation errors"""
+    logger.error(f"❌ Validation error: {exc}")
+    errors = []
+    for error in exc.errors():
+        errors.append({
+            "field": " -> ".join(str(loc) for loc in error["loc"]),
+            "message": error["msg"],
+            "type": error["type"]
+        })
+    
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": "Validation Error",
+            "message": "Request validation failed. Please check your input.",
+            "details": errors,
+            "timestamp": datetime.now().isoformat()
+        }
+    )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Handle all unhandled exceptions"""
+    logger.error(f"❌ Unhandled exception: {exc}", exc_info=True)
+    
+    # Check if it's a database connection error
+    error_str = str(exc).lower()
+    if "connection" in error_str or "timeout" in error_str or "mongo" in error_str:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "Service Unavailable",
+                "message": "Database connection failed. Please try again later.",
+                "timestamp": datetime.now().isoformat()
+            }
+        )
+    
+    # Check if it's an OpenAI API error
+    if "openai" in error_str or "api" in error_str:
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": "AI Service Error",
+                "message": "AI service temporarily unavailable. Please try again later.",
+                "timestamp": datetime.now().isoformat()
+            }
+        )
+    
+    # Generic server error
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal Server Error",
+            "message": "An unexpected error occurred. Please contact support if the issue persists.",
+            "timestamp": datetime.now().isoformat()
+        }
+    )
+
+
+# ============================================================================
 # PYDANTIC MODELS (Request/Response schemas)
 # ============================================================================
 
@@ -73,11 +146,32 @@ class JDUploadResponse(BaseModel):
     message: str
 
 class MatchRequest(BaseModel):
-    candidate_ids: List[str]
+    candidate_ids: List[str] = Field(
+        ..., 
+        min_items=1, 
+        max_items=50,
+        description="List of candidate IDs to match (1-50 candidates)"
+    )
+    
+    @validator('candidate_ids')
+    def validate_candidate_ids(cls, v):
+        if not v:
+            raise ValueError("At least one candidate ID is required")
+        
+        # Check for duplicates
+        if len(v) != len(set(v)):
+            raise ValueError("Duplicate candidate IDs found")
+        
+        # Check ID format (basic UUID validation)
+        for cid in v:
+            if not cid or len(cid) < 8:
+                raise ValueError(f"Invalid candidate ID format: {cid}")
+        
+        return v
 
 class MatchResult(BaseModel):
     id: str
-    overall: float
+    overall: float = Field(..., ge=0, le=10, description="Overall score (0-10)")
     justifications: dict
     feedback: str
     strengths: List[str]
@@ -86,18 +180,18 @@ class MatchResult(BaseModel):
 class MatchResponse(BaseModel):
     jd_id: str
     matched_candidates: List[MatchResult]
-    total_candidates: int
+    total_candidates: int = Field(..., ge=0)
     message: str
 
 class ShortlistCandidate(BaseModel):
     candidate_id: str
     name: str
-    overall_score: float
-    skills_score: float
-    experience_score: float
-    education_projects_score: float
-    achievements_score: float
-    extracurricular_score: float
+    overall_score: float = Field(..., ge=0, le=10)
+    skills_score: float = Field(..., ge=0, le=10)
+    experience_score: float = Field(..., ge=0, le=10)
+    education_projects_score: float = Field(..., ge=0, le=10)
+    achievements_score: float = Field(..., ge=0, le=10)
+    extracurricular_score: float = Field(..., ge=0, le=10)
     feedback: str
     strengths: List[str]
     improvement_areas: List[str]
@@ -106,9 +200,9 @@ class ShortlistCandidate(BaseModel):
 class ShortlistResponse(BaseModel):
     jd_id: str
     candidates: List[ShortlistCandidate]
-    total_count: int
-    page: int
-    page_size: int
+    total_count: int = Field(..., ge=0)
+    page: int = Field(..., ge=1)
+    page_size: int = Field(..., ge=1, le=100)
     filters_applied: dict
     message: str
 
@@ -121,6 +215,106 @@ class BiasCheckResponse(BaseModel):
     timestamp: str
     message: str
 
+class ErrorResponse(BaseModel):
+    error: str
+    message: str
+    details: Optional[dict] = None
+    timestamp: str
+
+
+
+# ============================================================================
+# SECURITY AND VALIDATION HELPERS
+# ============================================================================
+
+def verify_api_key(api_key: Optional[str] = Header(None, alias=API_KEY_HEADER)) -> bool:
+    """
+    Verify API key (optional - for future use)
+    Currently disabled but ready for production deployment
+    """
+    # For development, accept all requests
+    # In production, uncomment and set REQUIRED_API_KEY in environment
+    
+    # required_key = os.getenv("API_KEY")
+    # if required_key and api_key != required_key:
+    #     raise HTTPException(
+    #         status_code=401,
+    #         detail="Invalid or missing API key"
+    #     )
+    
+    return True
+
+
+def validate_file_upload(file: UploadFile) -> None:
+    """
+    Validate uploaded file (size, extension, etc.)
+    
+    Args:
+        file: Uploaded file from request
+        
+    Raises:
+        HTTPException: If validation fails
+    """
+    # Check filename exists
+    if not file.filename:
+        raise HTTPException(
+            status_code=400,
+            detail="No filename provided"
+        )
+    
+    # Check file extension
+    file_ext = file.filename.lower().split('.')[-1]
+    if file_ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type: .{file_ext}. Allowed types: {', '.join(ALLOWED_EXTENSIONS)}"
+        )
+    
+    # Check file size (if available from Content-Length header)
+    if hasattr(file, 'size') and file.size:
+        if file.size > MAX_FILE_SIZE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Maximum size: {MAX_FILE_SIZE_MB}MB. Your file: {file.size / 1024 / 1024:.2f}MB"
+            )
+    
+    logger.debug(f"✓ File validation passed: {file.filename}")
+
+
+def validate_file_content(content: bytes, filename: str) -> None:
+    """
+    Validate file content after reading
+    
+    Args:
+        content: File bytes
+        filename: Original filename
+        
+    Raises:
+        HTTPException: If validation fails
+    """
+    # Check content size
+    if len(content) > MAX_FILE_SIZE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum size: {MAX_FILE_SIZE_MB}MB. Your file: {len(content) / 1024 / 1024:.2f}MB"
+        )
+    
+    # Check content is not empty
+    if len(content) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="File is empty"
+        )
+    
+    # For PDF files, check magic bytes
+    if filename.lower().endswith('.pdf'):
+        if not content.startswith(b'%PDF'):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid PDF file. File does not contain valid PDF header."
+            )
+    
+    logger.debug(f"✓ Content validation passed: {len(content)} bytes")
 
 
 # ============================================================================
@@ -279,12 +473,13 @@ async def health_check():
 
 @app.post("/upload_resume", response_model=ResumeUploadResponse)
 async def upload_resume(
-    file: UploadFile = File(..., description="Resume file (PDF or TXT)")
+    file: UploadFile = File(..., description="Resume file (PDF or TXT, max 5MB)")
 ):
     """
     Upload and parse a resume file
     
-    - Accepts PDF or TXT files
+    - Accepts PDF or TXT files (max 5MB)
+    - Validates file type and size
     - Extracts structured data (name, skills, experience, etc.)
     - Anonymizes for bias-free processing
     - Saves to database
@@ -295,19 +490,12 @@ async def upload_resume(
     
     try:
         # Validate file
-        if not file.filename:
-            raise HTTPException(status_code=400, detail="No filename provided")
+        validate_file_upload(file)
         
-        file_ext = file.filename.lower().split('.')[-1]
-        if file_ext not in ['pdf', 'txt', 'text']:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Unsupported file format: {file_ext}. Use PDF or TXT files."
-            )
-        
-        # Read and parse file
+        # Read and validate content
         file_content = await file.read()
-        logger.info(f"✓ Read {len(file_content)} bytes from file")
+        validate_file_content(file_content, file.filename)
+        logger.info(f"✓ Read and validated {len(file_content)} bytes from file")
         
         logger.info("🔍 Parsing resume...")
         resume_data = parse_resume_file(file_content, file.filename)
@@ -355,13 +543,14 @@ async def upload_resume(
 
 @app.post("/upload_jd", response_model=JDUploadResponse)
 async def upload_jd(
-    file: Optional[UploadFile] = File(None, description="Job description file (optional)"),
-    jd_text: Optional[str] = Form(None, description="Job description text (optional)")
+    file: Optional[UploadFile] = File(None, description="Job description file (PDF/TXT, max 5MB)"),
+    jd_text: Optional[str] = Form(None, description="Job description text (optional, max 50,000 chars)")
 ):
     """
     Upload and parse a job description
     
-    - Accepts JD as file (PDF/TXT) or text form data
+    - Accepts JD as file (PDF/TXT, max 5MB) or text form data (max 50,000 chars)
+    - Validates file type, size, and text length
     - Extracts requirements (skills, experience, education)
     - Saves to database
     - Returns JD ID and parsed requirements
@@ -373,7 +562,12 @@ async def upload_jd(
         # Get JD text from file or form
         if file and file.filename:
             logger.info(f"📄 Processing JD file: {file.filename}")
+            
+            # Validate file
+            validate_file_upload(file)
+            
             file_content = await file.read()
+            validate_file_content(file_content, file.filename)
             
             file_ext = file.filename.lower().split('.')[-1]
             if file_ext == 'pdf':
@@ -389,6 +583,19 @@ async def upload_jd(
         
         elif jd_text:
             logger.info(f"📝 Processing JD text: {len(jd_text)} characters")
+            
+            # Validate text length
+            if len(jd_text) > 50000:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Job description text too long. Maximum: 50,000 characters. Your text: {len(jd_text)} characters"
+                )
+            
+            if len(jd_text.strip()) < 50:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Job description too short. Please provide at least 50 characters."
+                )
         
         else:
             raise HTTPException(
