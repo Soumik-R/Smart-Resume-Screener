@@ -1,0 +1,85 @@
+Full Stack Developer - Job Description
+
+Position: Full Stack Developer
+Experience Level: 3-5 Years
+Location: Hybrid/Remote
+Employment Type: Full-Time
+
+Job Overview:
+We are seeking a talented Full Stack Developer to join our dynamic engineering team. The ideal candidate will have strong expertise in both frontend and backend technologies, with a passion for building scalable, high-performance web applications.
+
+Key Responsibilities:
+• Design, develop, and maintain full-stack web applications using modern frameworks and technologies
+• Collaborate with cross-functional teams including designers, product managers, and other developers
+• Write clean, maintainable, and well-documented code following best practices
+• Implement responsive user interfaces with excellent user experience
+• Develop and integrate RESTful APIs and microservices
+• Optimize application performance and ensure scalability
+• Participate in code reviews and provide constructive feedback
+• Troubleshoot and debug applications across the full stack
+• Stay updated with emerging technologies and industry trends
+
+Required Technical Skills:
+
+Frontend:
+• Strong proficiency in JavaScript, HTML5, and CSS3
+• Experience with modern JavaScript frameworks (React.js, Vue.js, or Angular)
+• Knowledge of state management (Redux, Context API, Vuex)
+• Understanding of responsive design and mobile-first development
+• Experience with CSS preprocessors (SASS, LESS) or CSS-in-JS
+• Familiarity with frontend build tools (Webpack, Vite, npm)
+
+Backend:
+• Proficiency in server-side languages (Node.js, Python, Java, or .NET)
+• Experience with backend frameworks (Express.js, FastAPI, Django, Spring Boot)
+• Strong understanding of RESTful API design and implementation
+• Knowledge of authentication and authorization (JWT, OAuth)
+• Experience with serverless architectures (AWS Lambda, Azure Functions) is a plus
+
+Database:
+• Proficiency in SQL databases (PostgreSQL, MySQL, SQL Server)
+• Experience with NoSQL databases (MongoDB, Redis, DynamoDB)
+• Understanding of database design, indexing, and optimization
+• Knowledge of ORM frameworks (Sequelize, SQLAlchemy, Mongoose)
+
+DevOps & Tools:
+• Experience with version control systems (Git, GitHub, GitLab)
+• Familiarity with CI/CD pipelines (Jenkins, GitHub Actions, GitLab CI)
+• Understanding of containerization (Docker, Kubernetes)
+• Experience with cloud platforms (AWS, Azure, or Google Cloud)
+• Knowledge of monitoring and logging tools (CloudWatch, ELK Stack)
+
+Required Qualifications:
+• Bachelor's degree in Computer Science, Engineering, or related field (or equivalent experience)
+• 3-5 years of professional experience in full-stack development
+• Strong problem-solving skills and attention to detail
+• Excellent communication and teamwork abilities
+• Ability to work independently and manage multiple priorities
+• Experience with Agile/Scrum methodologies
+
+Preferred Skills:
+• Experience with GraphQL and Apollo Client
+• Knowledge of TypeScript
+• Familiarity with testing frameworks (Jest, Mocha, Pytest, JUnit)
+• Understanding of WebSockets and real-time applications
+• Experience with AI/ML integration or LLM APIs
+• Contributions to open-source projects
+• Experience with design systems and component libraries
+• Knowledge of web security best practices (OWASP)
+• Experience with performance optimization and CDN
+• Understanding of accessibility standards (WCAG)
+
+What We Offer:
+• Competitive salary and performance bonuses
+• Health insurance and wellness programs
+• Flexible work arrangements
+• Professional development opportunities
+• Collaborative and innovative work environment
+• Latest tools and technologies
+• Career growth opportunities
+
+About the Company:
+We are a fast-growing technology company focused on building innovative solutions that make a real impact. Our team values creativity, collaboration, and continuous learning. Join us to work on exciting projects with cutting-edge technologies.
+
+How to Apply:
+Please submit your resume along with a portfolio or GitHub profile showcasing your full-stack projects.

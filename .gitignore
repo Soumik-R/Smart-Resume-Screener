@@ -3,12 +3,15 @@ srs-env/
 venv/
 env/
 ENV/
+.venv/
 
 # Python compiled files
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+*.pyo
+*.pyd
 
 # Distribution / packaging
 .Python
@@ -49,7 +52,13 @@ coverage.xml
 
 # Environment variables
 .env
+.env.*
 .env.local
+.env.development.local
+.env.test.local
+.env.production.local
+backend/.env
+frontend/.env
 
 # IDEs
 .vscode/
@@ -57,19 +66,36 @@ coverage.xml
 *.swp
 *.swo
 *~
+.vs/
 
 # OS specific
 .DS_Store
 Thumbs.db
 
+# Frontend dependencies and build
+backend/frontend/node_modules/
+backend/frontend/build/
+backend/frontend/dist/
+backend/frontend/.next/
+backend/frontend/out/
+node_modules/
+
 # Project specific
 uploads/
-*.pdf
-*.docx
-*.txt
 reports/
 temp/
+*.sqlite
+*.db
+
+# Video files (too large for GitHub)
+*.mp4
+*.avi
+*.mov
+*.mkv
 
 # Logs
 *.log
 logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
